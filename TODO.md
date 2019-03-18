@@ -5,7 +5,9 @@
 
 
 # Todo
-* Work out what should the order be:
-  * Compare filepath, filename, then hash
-  * Compare filename, filepath, then hash
+* (Done) Work out what should the order be
   * Compare hash, then filepath, then filename
+
+* Identify which hash is being used throughout the list
+* Exception handling
+* Command-line parameters
