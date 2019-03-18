@@ -1,23 +1,14 @@
 import os
 from datetime import datetime
-import pprint
 import xmltodict
 
+# Debugging only
+import pprint
 pp = pprint.PrettyPrinter(indent=1)
 
-FILE_A = 'example1.mhl'
-FILE_B = 'example2.mhl'
-parsed_files = {}
-
-with open(FILE_A, 'r') as fA:
-    parsed_files['a'] = xmltodict.parse( fA.read(), dict_constructor=dict )
-with open(FILE_B, 'r') as fB:
-    parsed_files['b'] = xmltodict.parse( fB.read(), dict_constructor=dict )
-
-db = {
-    'a': {},
-    'b': {}
-}
+# File paths for testing
+FILE_A_PATH = 'example1.mhl'
+FILE_B_PATH = 'example3.mhl'
 
 # Program defaults
 MHL_TIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
@@ -28,74 +19,147 @@ class Hash:
     def __init__(self, hObj):
         if hObj['file']:
             self.filepath = hObj['file']
-            self.filename = os.path.split( self.filepath )[1]
-            self.hashes = {}
+            path = os.path.split( self.filepath )
+            self.directory = path[0]
+            self.filename = path[1]
+            self.recordedHashes = {}
+            self.duplicate = False
         else:
             # For some reason, the <hash> entry is missing a <file> attribute
             # Probably should throw an error and let the user know their MHL is malformed
             self.filepath = False
         try:
             # Try do the rest, hopefully without errors
-            self.size = hObj['size']
-            self.lastmodificationdate = hObj['lastmodificationdate']
+            self.size = int( hObj['size'] )
+            self.lastmodificationdate = datetime.strptime( hObj['lastmodificationdate'], MHL_TIME_FORMAT )
         except:
             print('Your MHL is malformed, go home')
         # Now, test for the hash type
         if hObj[HASH_TYPE_PREFERRED]:
             self.identifier = hObj[HASH_TYPE_PREFERRED]
             self.identifierType = HASH_TYPE_PREFERRED
-        for h in HASH_TYPES_ACCEPTABLE:
-            if h in hObj.keys():
+        for ht in HASH_TYPES_ACCEPTABLE:
+            if ht in hObj.keys():
                 # Use the next best acceptable hash as the Identiifer
                 if not self.identifier:
-                    self.identifier = hObj[h]
-                    self.identifierType = h
+                    self.identifier = hObj[ht]
+                    self.identifierType = ht
                 # Then otherwise categorise all other available hashes
-                self.hashes['h'] = hObj[h]
+                self.recordedHashes[ht] = hObj[ht]
 
-class List:
-    def __init__(self, filepath, listObj):
+    def __str__(self):
+        # By default, print the Identifier
+        return self.identifier
+
+class MHL:
+    def __init__(self, listObj, filepath):
         self.filepath = filepath
-        self.hashlist_version =
+        self.hashlist_version = listObj['hashlist']['@version']
+        self.creatorinfo = listObj['hashlist']['creatorinfo']
 
-# Set up a dictionary entry for each hash
-# For every a, b, c entry listed as a parsed dict
-for letter, parsed in parsed_files.items():
+        # Add the hashes
+        self.hashes = {}
+        HASH_DUPLICATE_SUFFIX = 1
+        for h in listObj['hashlist']['hash']:
+            objHash = Hash(h)
+            objHashIdentifier = objHash.identifier
 
-    # Find each object in that parsed dict
-    for object in parsed['hashlist']['hash']:
-        # Designate its filename and filepath
-        filepath = object['file']
-        filename = os.path.split( filepath )[1]
-        try:
-            hash = object[HASH_TYPE_DEFAULT]
-        except:
-            print('EXCEPTION')
-            print(object)
-            continue
+            if objHashIdentifier in self.hashes.keys():
+                # If this is defined already, it means there's a duplicate
+                # Append some digits to its name
+                objHashIdentifier = objHashIdentifier + '_' + str(HASH_DUPLICATE_SUFFIX)
+                HASH_DUPLICATE_SUFFIX += 1
+                objHash.duplicate = True
+                self.hashes[objHashIdentifier] = objHash
+            else:
+                # Store them in the dict by their identifier
+                self.hashes[objHashIdentifier] = objHash
 
-        # Then add it to the database
-        # { 'Z.jpg': { 'filepath': 'Path/Z.jpg', 'object': <hash> in Dict format }
-        # According to an identifier. Today, I've selected hash.
-        identifier = hash
-        db[letter][identifier] = {
-            'filepath': filepath,
-            'filename': filename,
-            'object': object
-            }
+            # Sort the hashes in alphabetical order by their identifier
+            # self.hashes = sorted( self.hashes, key = lambda x: x.identifier )
 
-COUNT_HASHES_A = len(db['a'])
-COUNT_HASHES_B = len(db['b'])
-COUNT_HASHES_DIFF = abs( COUNT_HASHES_A - COUNT_HASHES_B )
+    def __iter__(self):
+        return iter(self.hashes)
+
+    def findHash(self, desired):
+        if desired in self.hashes.keys():
+            return self.hashes[desired]
+        else:
+            return False
+
+    def findHashByAttribute(self, attribute, value):
+        for hash in self.hashes.values():
+            # Search that object for its attribute
+            search = getattr(hash, attribute, False)
+            if value == search:
+                # If it matches the value, give them back the object to work with
+                return hash
+            else:
+                # Otherwise keep searching
+                continue
+        # And give them nothing if you legitimately have no search results
+        return None
+
+    def findByOtherHash(self, hashType, hashValue):
+        for hash in self.hashes.values():
+            if not hash.recordedHashes:
+                continue
+            for k, v in hash.recordedHashes.items():
+                if k == hashType:
+                    if v == hashValue:
+                        return hash
+                    else:
+                        # Found the same hash type but it's not a matching value
+                        # Keep searching
+                        break
+                else:
+                    continue
+        return None
+
+    def count(self):
+        return len(self.hashes)
+
+    def getIdentifiers(self):
+        return { v.identifier for k, v in self.hashes.items() }
+
+    def getSize(self):
+        sum = 0
+        for h in self.hashes:
+            sum += h.size
+        return sum
+
+
+f = open(FILE_A_PATH, 'r')
+PARSE_FILE_A = xmltodict.parse( f.read(), dict_constructor = dict )
+f.close()
+
+f = open(FILE_B_PATH, 'r')
+PARSE_FILE_B = xmltodict.parse( f.read(), dict_constructor = dict )
+f.close()
+
+MHL_FILE_A = MHL(PARSE_FILE_A, FILE_A_PATH)
+MHL_FILE_B = MHL(PARSE_FILE_B, FILE_B_PATH)
+
 COUNT_MATCH = 0
 COUNT_MATCH_WARNING = 0
 COUNT_FAIL = 0
 
-DIRTY_HASHES = []
+# query = MHL_FILE_A.findHashByAttribute( 'md5', 'D32310BF7F58D57BA6F1D37DEEBB2C21' )
+# print(query)
 
-# Debugging
-# pp.pprint(db)
+y = MHL_FILE_A.findByOtherHash( 'md5', 'D32310BF7F58D57BA6F1D37DEEBB2C21' )
+print(y.size)
 
+"""
+for bIdentifier, b in MHL_FILE_B.hashes.items():
+    if bIdentifier in MHL_FILE_A.getIdentifiers():
+        continue
+    else:
+        print('FAIL', b.identifier, b.filename)
+
+
+
+###### DEPRECATED
 for bIdentifier, bItem in db['b'].items():
     bFilepath = bItem['filepath']
     bFilename = bItem['filename']
@@ -206,3 +270,4 @@ print('')
 print('Positive matches:                  ', COUNT_MATCH)
 print('Positive matches but with warnings:', COUNT_MATCH_WARNING)
 print('Total failures:                    ', COUNT_FAIL)
+"""
