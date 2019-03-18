@@ -7,8 +7,8 @@ import pprint
 pp = pprint.PrettyPrinter(indent=1)
 
 # File paths for testing
-FILE_A_PATH = 'example3.mhl'
-FILE_B_PATH = 'example1.mhl'
+FILE_A_PATH = 'example1.mhl'
+FILE_B_PATH = 'example2.mhl'
 
 # Program defaults
 MHL_TIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
@@ -61,7 +61,7 @@ class MHL:
                 # Otherwise keep searching
                 continue
         # And give them nothing if you legitimately have no search results
-        return None
+        return HashNonexistant()
 
     def findByOtherHash(self, hashType, hashValue):
         for hash in self.hashes.values():
@@ -77,7 +77,7 @@ class MHL:
                         break
                 else:
                     continue
-        return None
+        return HashNonexistant()
 
     def count(self):
         return len(self.hashes)
@@ -85,7 +85,6 @@ class MHL:
     def getIdentifiers(self):
         all = [ v.identifier for v in self.hashes.values() ]
         return sorted(all)
-
 
     def getSize(self):
         sum = 0
@@ -205,19 +204,64 @@ class Comparison:
 
     def checkDeltas(self):
 
-        for hash in self.deltaA + self.deltaB:
-            if isinstance(hash, HashNonexistant):
-                continue
-            else:
-                print('test parent', hash.__mro__   )
-                print('This file exists only in:', hash.parentMHL)
-                print('    ', hash.filepath, '(' + str(hash.size) + ' bytes)' )
-                print('    ', hash.recordedHashes)
-                print('    Investigate a little bit...')
+        # Clean out the HashNonexistant objects
+        deltaCleanA = [ h for h in self.deltaA if not isinstance(h, HashNonexistant) ]
+        deltaCleanB = [ h for h in self.deltaB if not isinstance(h, HashNonexistant) ]
 
-                if hash.filename:
-                    searchResultA = self.A.findHashByAttribute( 'filename', hash.filename )
-                    searchResultB = self.B.findHashByAttribute( 'filename', hash.filename )
+        # Assign them a letter so we can refer to it later
+        for hash in deltaCleanA:
+            hash.parentMHLLetter = 'A'
+        for hash in deltaCleanB:
+            hash.parentMHLLetter = 'B'
+
+        for hash in deltaCleanA + deltaCleanB:
+            print('This hash exists only in:', hash.parentMHL)
+            print('    ', hash.filepath, '(' + str(hash.size) + ' bytes)' )
+            print('    Hashes: ', hash.recordedHashes)
+            print('    Investigate a little bit...')
+
+            if hash.parentMHLLetter == 'A':
+                oppositeMHL = self.B
+            else:
+                oppositeMHL = self.A
+
+            # Look for a match by filename
+            hashPossible = oppositeMHL.findHashByAttribute( 'filename', hash.filename )
+            if isinstance(hashPossible, HashNonexistant):
+                # Couldn't find a match by filename
+                # Let's try a match by other hash
+                for otherHash, otherHashValue in hash.recordedHashes.items():
+                    if otherHash == hash.identifierType:
+                        pass
+                        # No use checking the other hashes if one of them is the identifier
+                        # We've already tested that to get this far
+                    else:
+                        hashPossible = oppositeMHL.findByOtherHash( otherHash, otherHashValue )
+                        if isinstance(hashPossible, HashNonexistant):
+                            print('    Definitely missing. No other matches by name or hash.')
+                            pass
+
+                # Couldn't find a match by other hash
+                # Let's try one more by size AND directory
+            if isinstance(hashPossible, Hash):
+                print('    Found one possible match')
+                print('    ', hashPossible.__dict__)
+                if hash.filename == hashPossible.filename:
+                    print('    The filename is the same')
+                else:
+                    print('    However the filename is different')
+                if hash.filepath == hashPossible.filepath:
+                    print('    The filepaths are the same')
+                else:
+                    print('    However the filepaths are different')
+                if hash.size == hashPossible.size:
+                    print('    The size is the same')
+                else:
+                    print('    However the size is different')
+                print('    Other hashes:', hashPossible.recordedHashes)
+            else:
+                # This means couldn't find a match by filename, nor by other hash
+                continue
 
 
 
