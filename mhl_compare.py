@@ -7,53 +7,18 @@ import pprint
 pp = pprint.PrettyPrinter(indent=1)
 
 # File paths for testing
-FILE_A_PATH = 'example1.mhl'
-FILE_B_PATH = 'example3.mhl'
+FILE_A_PATH = 'example3.mhl'
+FILE_B_PATH = 'example1.mhl'
 
 # Program defaults
 MHL_TIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
 HASH_TYPE_PREFERRED = 'xxhash64be'
 HASH_TYPES_ACCEPTABLE = [ 'xxhash64be', 'xxhash64', 'xxhash', 'md5', 'sha1' ]
 
-class Hash:
-    def __init__(self, hObj):
-        if hObj['file']:
-            self.filepath = hObj['file']
-            path = os.path.split( self.filepath )
-            self.directory = path[0]
-            self.filename = path[1]
-            self.recordedHashes = {}
-            self.duplicate = False
-        else:
-            # For some reason, the <hash> entry is missing a <file> attribute
-            # Probably should throw an error and let the user know their MHL is malformed
-            self.filepath = False
-        try:
-            # Try do the rest, hopefully without errors
-            self.size = int( hObj['size'] )
-            self.lastmodificationdate = datetime.strptime( hObj['lastmodificationdate'], MHL_TIME_FORMAT )
-        except:
-            print('Your MHL is malformed, go home')
-        # Now, test for the hash type
-        if hObj[HASH_TYPE_PREFERRED]:
-            self.identifier = hObj[HASH_TYPE_PREFERRED]
-            self.identifierType = HASH_TYPE_PREFERRED
-        for ht in HASH_TYPES_ACCEPTABLE:
-            if ht in hObj.keys():
-                # Use the next best acceptable hash as the Identiifer
-                if not self.identifier:
-                    self.identifier = hObj[ht]
-                    self.identifierType = ht
-                # Then otherwise categorise all other available hashes
-                self.recordedHashes[ht] = hObj[ht]
-
-    def __str__(self):
-        # By default, print the Identifier
-        return self.identifier
-
 class MHL:
     def __init__(self, listObj, filepath):
         self.filepath = filepath
+        self.identifier = filepath
         self.hashlist_version = listObj['hashlist']['@version']
         self.creatorinfo = listObj['hashlist']['creatorinfo']
 
@@ -62,6 +27,7 @@ class MHL:
         HASH_DUPLICATE_SUFFIX = 1
         for h in listObj['hashlist']['hash']:
             objHash = Hash(h)
+            objHash.parentMHL = self.identifier
             objHashIdentifier = objHash.identifier
 
             if objHashIdentifier in self.hashes.keys():
@@ -75,9 +41,6 @@ class MHL:
                 # Store them in the dict by their identifier
                 self.hashes[objHashIdentifier] = objHash
 
-            # Sort the hashes in alphabetical order by their identifier
-            # self.hashes = sorted( self.hashes, key = lambda x: x.identifier )
-
     def __iter__(self):
         return iter(self.hashes)
 
@@ -85,7 +48,7 @@ class MHL:
         if desired in self.hashes.keys():
             return self.hashes[desired]
         else:
-            return False
+            return HashNonexistant()
 
     def findHashByAttribute(self, attribute, value):
         for hash in self.hashes.values():
@@ -120,13 +83,143 @@ class MHL:
         return len(self.hashes)
 
     def getIdentifiers(self):
-        return { v.identifier for k, v in self.hashes.items() }
+        all = [ v.identifier for v in self.hashes.values() ]
+        return sorted(all)
+
 
     def getSize(self):
         sum = 0
         for h in self.hashes:
             sum += h.size
         return sum
+
+class Hash(MHL):
+    def __init__(self, hObj):
+        self.parentMHL = False
+
+        if hObj['file']:
+            self.filepath = hObj['file']
+            path = os.path.split( self.filepath )
+            self.directory = path[0]
+            self.filename = path[1]
+            self.recordedHashes = {}
+            self.duplicate = False
+        else:
+            # For some reason, the <hash> entry is missing a <file> attribute
+            # Probably should throw an error and let the user know their MHL is malformed
+            self.filepath = False
+        try:
+            # Try do the rest, hopefully without errors
+            self.size = int( hObj['size'] )
+            self.lastmodificationdate = datetime.strptime( hObj['lastmodificationdate'], MHL_TIME_FORMAT )
+        except:
+            print('Your MHL is malformed, go home')
+
+        # Now, we search for acceptable hash types
+        # And because our preferred hash is first in the list, it gets assigned as the identifier
+        identifierAlreadyFound = False
+        for ht in HASH_TYPES_ACCEPTABLE:
+            if ht in hObj.keys():
+                # Record all acceptable hashes
+                self.recordedHashes[ht] = hObj[ht]
+
+                # But also grab an identifier at the same time
+                if identifierAlreadyFound:
+                    continue
+                else:
+                    self.identifier = hObj[ht]
+                    self.identifierType = ht
+                    identifierAlreadyFound = True
+
+    def __str__(self):
+        # By default, print the Identifier
+        return self.identifier
+
+class HashNonexistant:
+    def __getattr__(self, attribute):
+        return None
+    def __setattr__(self, attribute):
+        return None
+
+
+class Comparison:
+    def __init__(self, listA, listB):
+        self.A = listA
+        self.B = listB
+        self.deltaA = set()
+        self.deltaB = set()
+        self.common = set()
+
+    def gatherDelta(self):
+        # Get the identifiers just as strings
+        setA = set( self.A.getIdentifiers() )
+        setB = set( self.B.getIdentifiers() )
+        # Then compare them and generate lists
+        # Also get a set of all the hashes in common between the two
+        deltaA = setA - setB
+        deltaB = setB - setA
+        common = setA.union(setB) - deltaA - deltaB
+
+        self.deltaA = [ self.A.findHash(i) for i in deltaA ]
+        self.deltaB = [ self.B.findHash(i) for i in deltaA ]
+        self.common = [ ( self.A.findHash(i), self.B.findHash(i) ) for i in common ]
+        # Remember, self.common is a list of TUPLES because it contains objects from both lists.
+
+        return True
+
+    def checkCommon(self):
+        for hashA, hashB in self.common:
+
+            # Iterate over all attributes (size, date) of the hash
+            for a, b in zip( hashA.__dict__.items(), hashB.__dict__.items() ):
+                # Example: a = ('identifier', '18fc3d609a8a3469')
+                # a[0] is the attribute
+                # a[1] is the value of the attribute
+
+                if a[1] == b[1]:
+                    # In terms of this attribute, HashA and HashB match exactly
+                    # Pass, this is expected
+                    # print('match', a[0], a[1], b[1])
+                    pass
+                else:
+                    # In terms of this attribute, HashA and HashB have different values
+                    # This may mean different filename, different date, or just simply additional hashes
+                    # Let's probe to find out
+
+                    if a[0] == 'lastmodificationdate':
+                        # TODO: TIME DIFFERENCE BETWEEN MODIFICATION DATES
+                        # Make it human time?
+                        print('DIFFERENT: modification time:', a[1] - b[1])
+                    elif a[0] == 'size':
+                        print('DIFFERENT: size:', a[1], b[1], 'Difference', abs(a[1] - b[1]) )
+                    elif a[0] == 'recordedHashes':
+                        if hashA.identifierType == hashB.identifierType:
+                            # They have the same hash
+                            # Therefore, a difference in recordedHashes is not worth reporting
+                            pass
+                        else:
+                            print('These files have different hash types')
+                            print(hashA.identifierType, hashB.identifierType, a[1], b[1])
+                    elif a[0] == 'directory':
+                        print('DIFFERENT: directory:', a[1], b[1])
+
+    def checkDeltas(self):
+
+        for hash in self.deltaA + self.deltaB:
+            if isinstance(hash, HashNonexistant):
+                continue
+            else:
+                print('test parent', hash.__mro__   )
+                print('This file exists only in:', hash.parentMHL)
+                print('    ', hash.filepath, '(' + str(hash.size) + ' bytes)' )
+                print('    ', hash.recordedHashes)
+                print('    Investigate a little bit...')
+
+                if hash.filename:
+                    searchResultA = self.A.findHashByAttribute( 'filename', hash.filename )
+                    searchResultB = self.B.findHashByAttribute( 'filename', hash.filename )
+
+
 
 
 f = open(FILE_A_PATH, 'r')
@@ -144,11 +237,19 @@ COUNT_MATCH = 0
 COUNT_MATCH_WARNING = 0
 COUNT_FAIL = 0
 
+# print(MHL_FILE_A.getIdentifiers())
+# print(MHL_FILE_B.getIdentifiers())
+
+compare = Comparison(MHL_FILE_A, MHL_FILE_B)
+compare.gatherDelta()
+# compare.checkCommon()
+compare.checkDeltas()
+
 # query = MHL_FILE_A.findHashByAttribute( 'md5', 'D32310BF7F58D57BA6F1D37DEEBB2C21' )
 # print(query)
 
-y = MHL_FILE_A.findByOtherHash( 'md5', 'D32310BF7F58D57BA6F1D37DEEBB2C21' )
-print(y.size)
+# y = MHL_FILE_A.findByOtherHash( 'md5', 'D32310BF7F58D57BA6F1D37DEEBB2C21' )
+# print(y.size)
 
 """
 for bIdentifier, b in MHL_FILE_B.hashes.items():
