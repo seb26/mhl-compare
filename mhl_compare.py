@@ -6,6 +6,7 @@
 
 import os
 from datetime import datetime
+from operator import attrgetter
 import argparse
 
 import xmltodict
@@ -18,6 +19,9 @@ MHL_TIME_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
 HASH_TYPE_PREFERRED = 'xxhash64be'
 HASH_TYPES_ACCEPTABLE = [ 'xxhash64be', 'xxhash64', 'xxhash', 'md5', 'sha1' ]
 
+LOG_COLOR_MHL_A = 'green'
+LOG_COLOR_MHL_B = 'yellow'
+LOG_COLOR_WARNING = 'red'
 
 class MHL:
     def __init__(self, listObj, filepath):
@@ -52,7 +56,7 @@ class MHL:
         if desired in self.hashes.keys():
             return self.hashes[desired]
         else:
-            return HashNonexistant()
+            return HashNonexistent()
 
     def findHashByAttribute(self, attribute, value):
         for hash in self.hashes.values():
@@ -65,7 +69,7 @@ class MHL:
                 # Otherwise keep searching
                 continue
         # And give them nothing if you legitimately have no search results
-        return HashNonexistant()
+        return HashNonexistent()
 
     def findByOtherHash(self, hashType, hashValue):
         for hash in self.hashes.values():
@@ -81,7 +85,7 @@ class MHL:
                         break
                 else:
                     continue
-        return HashNonexistant()
+        return HashNonexistent()
 
     def count(self):
         return len(self.hashes)
@@ -102,12 +106,19 @@ class Hash(MHL):
         self.parentMHL = False
 
         if hObj['file']:
-            self.filepath = hObj['file']
-            path = os.path.split( self.filepath )
-            self.directory = path[0]
-            self.filename = path[1]
             self.recordedHashes = {}
             self.duplicate = False
+
+            # Path operations
+            self.filepath = hObj['file']
+            path = os.path.split( self.filepath )
+            if path[0]:
+                # If inside a folder
+                self.directory = path[0]
+            else:
+                # If not, indicate clearly that it is at the root
+                self.directory = "/"
+            self.filename = path[1]
         else:
             # For some reason, the <hash> entry is missing a <file> attribute
             # Probably should throw an error and let the user know their MHL is malformed
@@ -144,7 +155,7 @@ class Hash(MHL):
         # By default, print the Identifier
         return self.identifier
 
-class HashNonexistant:
+class HashNonexistent:
     def __getattr__(self, attribute):
         return None
     def __setattr__(self, attribute):
@@ -159,95 +170,19 @@ class Comparison:
         self.deltaB = set()
         self.common = set()
 
-        self.COUNT_MATCH_ALL = 0
-        self.COUNT_MINOR = 0
-        self.COUNT_HASH_TYPE_DIFFERENT = 0
-        self.COUNT_HASH_CHANGED = 0
-        self.COUNT_MISSING = 0
-        self.COUNT_IMPOSSIBLE = 0
-
-    """
-    def recordResult(self,
-            hashType, hash, filename, directory, size, modifiedDate):
-
-        # Need to have a brief check for structure of tuples and booleans
-        # Relying on them a lot here
-        # Will make debugging harder
-
-        entry = {
-            'hashType': hashType,
-            'hash': hash,
-            'filename': filename,
-            'directory': directory,
-            'size': size,
-            'modifiedDate': modifiedDate
-        }
-        if isinstance(objectA, HashNonexistant) or isinstance(objectB, HashNonexistant):
-            # If either object is nonexistant, then they belong in the MISSING category.
-            self.results['MISSING'].append(entry)
-        else:
-            # Otherwise, they are potentially genuine matches
-            # Continue to evaluate them
-
-            if hashType[0] is True and hash[0] is True:
-                # The hash types and the hash match. These are definitely the files
-                if size[0] is True:
-                    if filename[0] is False or directory[0] is False or modifiedDate is False:
-                        # At least one of the above attributes was Different
-                        self.results['MINOR'].append(entry)
-                    else:
-                        # All attributes match
-                        self.results['PERFECT'].append(entry)
-                else:
-                    # IMPOSSIBLE
-                    # How can a hash stay the same, but its size be Different?
-                    result['IMPOSSIBLE'].append(entry)
-                    pass
-            else:
-                if filename[0] is True:
-                    if size[0] is False or directory[0] is False or modifiedDate is False:
-                        self.results['FILE_CHANGED'].append(entry)
-                    else:
-                        # All attributes match
-                        # Summary: The hash types don't match, but everything else does
-                        self.results['HASH_TYPE'].append(entry)
-                else:
-                    # Filename doesn't match
-                    # Give up, if hashtype, hash and filename don't match, it ain't the same file, as far as I can reasonably judge.
-                    pass
-
-    recordResult(hashType, hash, filename, directory, size, modifiedDate)
-
-
-    # For PERFECT results, don't process any further, just count them.
-    RESULTS_COUNT_PERFECT = len( result['PERFECT'] )
-
-    # For MINOR results
-    for e in self.results['MINOR']:
-        if e['filename'][0] == False:
-            print( '   ', e['filename'][1] )
-            print( '      Different: Filename (1st MHL):', colored( e['filename'][1], 'green' ) )
-            print( '      Different: Filename (2nd MHL):', colored( e['filename'][2], 'yellow' ) )
-        else:
-            print( '   ', e['filename'][1] )
-        if e['hash'][0] == False:
-            print( '      Different: Hash (1st MHL):', colored( e['hash'][1], 'green' ),
-                '({})'.format( e['hashType'][1] ) )
-            print( '      Different: Hash (1st MHL):', colored( e['hash'][2], 'yellow' ),
-                '({})'.format( e['hashType'][2] ) )
-        else:
-            print( '      Identical: Hash:', e['hash'][1], '({})'.format( e['hashType'][1] ) )
-        if e['directory'][0] == False:
-            print( '      Different: Directory (1st MHL):', colored( e['directory'][1], 'green' ) )
-            print( '      Different: Directory (2nd MHL):', colored( e['directory'][2], 'yellow' ) )
-        else:
-            print( '     ', e['directory'][1] )
-        if e['modifiedDate'][0] == False:
-            print( '      Different: Modified date (1st MHL):', colored( e['modifiedDate'][1], 'green' ) )
-            print( '      Different: Modified date (2nd MHL):', colored( e['modifiedDate'][2], 'yellow' ) )
-        else:
-            print( '     ', e['modifiedDate'][1] )
-    """
+        # Define the categories of outcomes.
+        count_values = [
+            'PERFECT', # Match hash and all filesystem attributes
+            'MINOR', # Match hash but one or more filesystem attributes are different
+            'HASH_TYPE_DIFFERENT', # Hash type is different, cannot be compared
+            'HASH_CHANGED', # Hash is different, indicating a file change
+            'MISSING', # Exists only in one list or the other
+            'IMPOSSIBLE' # For anomalies (like hash the same but size different)
+            ]
+        # Create a place to store these numbers as we go along.
+        self.COUNT = {}
+        for v in count_values:
+            self.COUNT[v] = 0
 
     def createComparisonLists(self):
         # Get the identifiers just as strings
@@ -273,114 +208,241 @@ class Comparison:
             diff = DictDiffer( hashA.__dict__, hashB.__dict__ )
             dAdded = diff.added()
             dRemoved = diff.removed()
-            dChangedOnly = diff.changed()
-            dChanged = diff.new_or_changed()
+            dChanged = diff.changed()
             dUnchanged = diff.unchanged()
 
+            # Debugging
+            """
+            print(dAdded)
+            print(dRemoved)
+            print(dChangedOnly)
+            print(dChanged)
+            print(dUnchanged)
+            """
+
+            if { 'filename', 'directory', 'size', 'lastmodificationdate' }.issubset(dUnchanged):
+                # If neither of these variables have changed, then we have a clean match.
+                # Report it and move on.
+                self.COUNT['PERFECT'] += 1
+                continue
+
             if 'filename' in dChanged:
-                self.COUNT_MINOR += 1
+                self.COUNT['MINOR'] += 1
                 print( '  ' + colored( hashA.filename, 'green' ) )
-                print( '    Filename: different (1st):', colored( hashA.filename, 'green' ) )
-                print( '                        (2nd):', colored( hashB.filename, 'yellow' ) )
+                print( '    Filename: different (1st):', colored( hashA.filename, LOG_COLOR_MHL_A ) )
+                print( '                        (2nd):', colored( hashB.filename, LOG_COLOR_MHL_B ) )
             else:
                 print( '  ' + hashA.filename )
             if 'directory' in dChanged:
-                self.COUNT_MINOR += 1
-                print( '      Directory: different (1st):', colored( hashA.directory, 'green' ) )
-                print( '                           (2nd):', colored( hashB.directory, 'yellow' ) )
+                self.COUNT['MINOR'] += 1
+                print( '      Path: different (1st):', colored( hashA.directory, LOG_COLOR_MHL_A ) )
+                print( '                      (2nd):', colored( hashB.directory, LOG_COLOR_MHL_B ) )
             else:
-                print( '      Directory: identical (' + hashA.directory + ')' )
+                print( '      Path: identical: ' + hashA.directory )
 
             # Straight up print the hash, don't check it.
             # At this stage, it's not possible for the hash to be different.
             # A check has already been performed for the pair to even be included in this group.
-            print( '      Hash: identical ({}: {})'.format( hashA.identifierType, hashA.identifier ) )
+            print( '      Hash: identical: {} ({})'.format( hashA.identifier, hashA.identifierType ) )
 
             if 'size' in dChanged:
                 # It is an anomaly if the size has changed, but not the hash.
                 # Report it as impossible, but also print it to the user anyway.
-                self.IMPOSSIBLE += 1
-                print( '      Size: different (1st):', colored( str(hashA.size), 'green' ) )
-                print( '                      (2nd):', colored( str(hashB.size), 'yellow' ) )
+                self.COUNT['IMPOSSIBLE'] += 1
+                print( '      Size: different (1st):', colored( str(hashA.size), LOG_COLOR_MHL_A ) )
+                print( '                      (2nd):', colored( str(hashB.size), LOG_COLOR_MHL_B ) )
             else:
-                print( '      ' + 'Size: identical (' + str(hashA.size), 'bytes)' )
+                print( '      ' + 'Size: identical: ' + str(hashA.size), 'bytes' )
 
             if 'lastmodificationdate' in dChanged:
-                self.COUNT_MINOR += 1
-                print( '      Modified date: different (1st):', colored( hashA.lastmodificationdate, 'green' ) )
-                print( '                               (2nd):', colored( hashB.lastmodificationdate, 'yellow' ) )
-            else:
-                print( '      ' + hashA.lastmodificationdate )
+                self.COUNT['MINOR'] += 1
+                print( '      Modified date: different (1st):', colored( hashA.lastmodificationdate, LOG_COLOR_MHL_A ) )
+                print( '                               (2nd):', colored( hashB.lastmodificationdate, LOG_COLOR_MHL_B ) )
 
             # Briefly explain to the user what attributes were added/removed
             if len(dAdded) > 0:
                 dAddedList = ', '.join( str(i) for i in dAdded )
                 print( '      These attributes exist in 1st only:',
-                    colored(dAddedList, 'green' ) )
+                    colored(dAddedList, LOG_COLOR_MHL_A ) )
             if len(dRemoved) > 0:
                 dRemovedList = ', '.join( str(i) for i in dRemoved )
                 print( '      These attributes exist in 2nd only:',
-                colored(dRemovedList, 'yellow' ) )
+                colored(dRemovedList, LOG_COLOR_MHL_B ) )
 
-    def checkDelta(self, letter):
-
-        letter = letter.upper()
-        if not letter == 'A' or letter == 'B':
-            raise Exception('This delta function expects a string that is A or B')
-
-        delta = getattr(self, 'delta' + letter, False)
-        if delta == False:
-            raise exception('Delta object was just False, expected a list, delta results improperly reported?')
-
-        # Clean out the HashNonexistant objects
-        deltaClean = [ h for h in delta if not isinstance(h, HashNonexistant) ]
-
-        # Refer to the opposite MHL to access and perform searches on it
-        if letter == 'A':
+    def checkDelta(self, listA=False, listB=False):
+        if listA:
+            delta = self.deltaA
+            # Refer to the opposite MHL to access and perform searches on it
             oppositeMHL = self.B
-        elif letter == 'B':
+
+            listLetter = 'A'
+            listLabel = '1st'
+            listLabelOpposite = '2nd'
+            listColor = LOG_COLOR_MHL_A
+            listColorOpposite = LOG_COLOR_MHL_B
+        elif listB:
+            delta = self.deltaB
             oppositeMHL = self.A
 
+            listLetter = 'B'
+            listLabel = '2nd'
+            listLabelOpposite = '1st'
+            listColor = LOG_COLOR_MHL_B
+            listColorOpposite = LOG_COLOR_MHL_A
+        else:
+            print("INTERNAL: Couldn't check deltas, none were specified. Specify one")
+            return
+
+        # Quickly clean Nonexistent objects out if they exist
+        deltaClean = [ h for h in delta if not isinstance(h,HashNonexistent) ]
+        # Sort by filepath
+        deltaClean.sort(key=attrgetter('filepath'))
+
         for hash in deltaClean:
-            # Use "hash.parentMHL"
 
-            # Look for a match by filename
-            hashPossible = oppositeMHL.findHashByAttribute( 'filename', hash.filename )
-            if isinstance(hashPossible, HashNonexistant):
-                # Couldn't find a match by filename
-                # Let's try a match by other hash
-                for otherHash, otherHashValue in hash.recordedHashes.items():
-                    if otherHash == hash.identifierType:
-                        pass
-                        # No use checking the other hashes if one of them is the identifier
-                        # We've already tested that to get this far
+            print(colored('DEBUG >>>', 'yellow'), hash.identifier, colored(hash.filename, 'green'))
+            # print('rh', hash.recordedHashes)
+
+            foundHashPossible = None
+            beenCounted = False # If this hash has been counted yet
+
+            # Look for a match by other hash
+            for otherHashType, otherHashValue in hash.recordedHashes.items():
+                if otherHashType == hash.identifierType:
+                    pass # to next hash in the list
+
+                hashPossible = oppositeMHL.findByOtherHash( otherHashType, otherHashValue )
+                if isinstance(hashPossible, HashNonexistent):
+                    # No result found, move on
+                    foundHashPossible = False
+                    pass
+                else:
+                    # Found it
+                    # And because we found it by another hash...
+                    # Let's update the IDENTIFIER. Risky?
+                    hash.identifier = otherHashValue
+                    hash.identifierType = otherHashType
+                    hashPossible.identifier = otherHashValue
+                    hashPossible.identifierType = otherHashType
+                    foundHashPossible = True
+                    break
+
+            if foundHashPossible == False:
+                # Searched but no matches by other hash.
+                # Look for a match by filename
+                hashPossible = oppositeMHL.findHashByAttribute( 'filename', hash.filename )
+
+                if isinstance(hashPossible, HashNonexistent):
+                    # Definitely missing. No other matches by name or hash.
+                    foundHashPossible = False
+                else:
+                    foundHashPossible = True
+
+            if foundHashPossible == True:
+                # Compare the hash and the possible hash.
+                diff = DictDiffer(hash.__dict__, hashPossible.__dict__)
+                dAdded = diff.added()
+                dRemoved = diff.removed()
+                dUnchanged = diff.unchanged()
+                dChanged = diff.changed()
+
+                # First print a filename so everything fits underneath it.
+                print( '  ' + hash.filename )
+
+                # Then begin testing.
+                if hash.identifierType == hashPossible.identifierType:
+                    # Hash type is the same
+                    if hash.identifier == hashPossible.identifier:
+                        # And so are the hashes
+                        if not beenCounted:
+                            self.COUNT['PERFECT'] += 1
+                            beenCounted = True
+                        print('      Hash: identical.')
                     else:
-                        hashPossible = oppositeMHL.findByOtherHash( otherHash, otherHashValue )
-                        if isinstance(hashPossible, HashNonexistant):
-                            print('    Definitely missing. No other matches by name or hash.')
-                            pass
+                        # But the hashes are different. File has changed?
+                        if not beenCounted:
+                            self.COUNT['HASH_CHANGED'] += 1
+                            beenCounted = True
+                        print( colored('      Hash: These hashes are different from each other. It is likely the file has changed.', LOG_COLOR_WARNING ) )
+                    print('      Hash ({}):'.format(listLabel),
+                        colored('{} ({})'.format(hash.identifier, hash.identifierType), listColor)
+                    )
+                    print('      Hash ({}):'.format(listLabelOpposite),
+                        colored('{} ({})'.format(hashPossible.identifier, hashPossible.identifierType), listColorOpposite)
+                    )
+                else:
+                    # Hash type is not the same,
+                    if not beenCounted:
+                        self.COUNT['HASH_TYPE_DIFFERENT'] += 1
+                        beenCounted = True
+                    print('#### EMERGENCY THE HASHES ARE DIFFERENT TYPES')
 
-                # Couldn't find a match by other hash
-                # Let's try one more by size AND directory
-            if isinstance(hashPossible, Hash):
-                print('    Found one possible match')
-                print('    ', hashPossible.__dict__)
-                if hash.filename == hashPossible.filename:
-                    print('    The filename is the same')
+                if { 'filename', 'directory', 'size', 'lastmodificationdate' }.issubset(dUnchanged):
+                    # If neither of these variables have changed, then we almost have a clean match.
+                    # EVEN THOUGH we used a slightly different preferred hash.
+                    if not beenCounted:
+                        self.COUNT['PERFECT'] += 1
+                        beenCounted = True
+                    continue
                 else:
-                    print('    However the filename is different')
-                if hash.filepath == hashPossible.filepath:
-                    print('    The filepaths are the same')
-                else:
-                    print('    However the filepaths are different')
-                if hash.size == hashPossible.size:
-                    print('    The size is the same')
-                else:
-                    print('    However the size is different')
-                print('    Other hashes:', hashPossible.recordedHashes)
-            else:
-                # This means couldn't find a match by filename, nor by other hash
-                continue
+
+                    if 'filename' in dChanged:
+                        if not beenCounted:
+                            self.COUNT['MINOR'] += 1
+                            beenCounted = True
+                        print( '    Filename: different (1st):', colored( hash.filename, LOG_COLOR_MHL_A ) )
+                        print( '                        (2nd):', colored( hashPossible.filename, LOG_COLOR_MHL_B ) )
+                    else:
+                        # If the filename is the same, it has already been declared closer to the top.
+                        pass
+
+                    if 'directory' in dChanged:
+                        self.COUNT['MINOR'] += 1
+                        print( '      Path: different (1st):', colored( hash.directory, LOG_COLOR_MHL_A ) )
+                        print( '                      (2nd):', colored( hashPossible.directory, LOG_COLOR_MHL_B ) )
+                    else:
+                        print( '      Path: identical:', hash.directory )
+
+
+                    if 'size' in dChanged:
+                        # It is an anomaly if the size has changed, but not the hash.
+                        # Report it as impossible, but also print it to the user anyway.
+                        self.COUNT['IMPOSSIBLE'] += 1
+                        print( '      Size: different (1st):', colored( str(hash.size), LOG_COLOR_MHL_A ) )
+                        print( '                      (2nd):', colored( str(hashPossible.size), LOG_COLOR_MHL_B ) )
+                    else:
+                        print( '      ' + 'Size: identical: ' + str(hashPossible.size), 'bytes' )
+
+                    if 'lastmodificationdate' in dChanged:
+                        self.COUNT['MINOR'] += 1
+                        print( '      Modified date: different (1st):', colored( hash.lastmodificationdate, LOG_COLOR_MHL_A ) )
+                        print( '                               (2nd):', colored( hashPossible.lastmodificationdate, LOG_COLOR_MHL_B ) )
+
+                    # Briefly explain to the user what attributes were added/removed
+                    if len(dAdded) > 0:
+                        dAddedList = ', '.join( str(i) for i in dAdded )
+                        print( '      These attributes exist in 1st only:',
+                            colored(dAddedList, LOG_COLOR_MHL_A ) )
+                    if len(dRemoved) > 0:
+                        dRemovedList = ', '.join( str(i) for i in dRemoved )
+                        print( '      These attributes exist in 2nd only:',
+                        colored(dRemovedList, LOG_COLOR_MHL_B ) )
+
+                    pass
+
+            if foundHashPossible == False:
+                # Begin to print the results
+                self.COUNT['MISSING'] += 1
+                print('This file only exists in',
+                    colored(listLabel + ' MHL', listColor) + ':' )
+                print('  ' + colored(hash.filename, listColor))
+                print( '      ' + 'Path:', hash.directory )
+                print( '      ' + 'Size:', str(hash.size), 'bytes' )
+                print( '      ' + 'Hash:', hash.identifier, '({})'.format(hash.identifierType ) )
+
+    def printCount(self):
+        print( self.COUNT )
+        return
 
 
 # Arguments
@@ -405,6 +467,7 @@ compare.createComparisonLists()
 print('#################### checkCommon')
 compare.checkCommon()
 print('#################### checkDelta A')
-# compare.checkDelta('A')
+compare.checkDelta(listA=True)
 print('#################### checkDelta B')
-# compare.checkDelta('B')
+compare.checkDelta(listB=True)
+compare.printCount()

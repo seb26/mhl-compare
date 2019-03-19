@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<hashlist version="1.1">
+    <creatorinfo>
+        <name>YoYotta</name>
+        <username>YoYotta</username>
+        <hostname>Lyotard2</hostname>
+        <tool>YoYotta 3.0 (67)</tool>
+        <startdate>2019-03-17T13:30:02</startdate>
+        <finishdate>2019-03-17T13:30:02</finishdate>
+    </creatorinfo>
+    <hash>
+        <file>Example1.jpg</file>
+        <size>468094192</size>
+        <lastmodificationdate>2019-03-17T12:39:24</lastmodificationdate>
+        <md5>4E8973C2FB9CC94A0C2750B72D62700F</md5>
+    </hash>
+    <hash>
+        <file>System Volume Information/IndexerVolumeGuid</file>
+        <size>76</size>
+        <lastmodificationdate>2018-12-13T14:23:18</lastmodificationdate>
+        <md5>1DC2AEF7309F1550E5FD5771D98F537D</md5>
+    </hash>
+</hashlist>
