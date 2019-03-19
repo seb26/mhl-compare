@@ -6,12 +6,13 @@
 
 import os
 from datetime import datetime
+from dateutil.tz import tzutc
 from operator import attrgetter
 import argparse
 
 import xmltodict
 from dateutil import parser as dateutilParser
-import pytz
+import humanize
 from termcolor import colored
 from lib.dictdiffer import DictDiffer
 
@@ -33,6 +34,9 @@ def showDate(dt):
         return dt
     else:
         return dt.strftime(LOG_TIME_FORMAT)
+
+def showSize(bytes):
+    return humanize.naturalsize(bytes, binary=True) + "({})".format(bytes)
 
 class MHL:
     def __init__(self, listObj, filepath):
@@ -141,7 +145,7 @@ class Hash(MHL):
         # Try do the date parsing, hopefully without errors
         modDate = dateutilParser.parse( hObj['lastmodificationdate'] )
         if modDate.tzinfo is None:
-            self.lastmodificationdate = modDate.replace(tzinfo=pytz.UTC)
+            self.lastmodificationdate = modDate.replace(tzinfo=tzutc())
         else:
             self.lastmodificationdate = modDate
 
@@ -219,6 +223,7 @@ class Comparison:
     def checkCommon(self):
 
         for hashA, hashB in self.common:
+            beenCounted = False
 
             diff = DictDiffer( hashA.__dict__, hashB.__dict__ )
             dAdded = diff.added()
@@ -238,18 +243,24 @@ class Comparison:
             if { 'filename', 'directory', 'size', 'lastmodificationdate' }.issubset(dUnchanged):
                 # If neither of these variables have changed, then we have a clean match.
                 # Report it and move on.
-                self.COUNT['PERFECT'] += 1
+                if not beenCounted:
+                    self.COUNT['PERFECT'] += 1
+                    beenCounted = True
                 continue
 
             if 'filename' in dChanged:
-                self.COUNT['MINOR'] += 1
+                if not beenCounted:
+                    self.COUNT['MINOR'] += 1
+                    beenCounted = True
                 print( '  ' + colored( hashA.filename, 'green' ) )
                 print( '    Filename: different (1st):', colored( hashA.filename, LOG_COLOR_MHL_A ) )
                 print( '                        (2nd):', colored( hashB.filename, LOG_COLOR_MHL_B ) )
             else:
                 print( '  ' + hashA.filename )
             if 'directory' in dChanged:
-                self.COUNT['MINOR'] += 1
+                if not beenCounted:
+                    self.COUNT['MINOR'] += 1
+                    beenCounted = True
                 print( '      Path: different (1st):', colored( hashA.directory, LOG_COLOR_MHL_A ) )
                 print( '                      (2nd):', colored( hashB.directory, LOG_COLOR_MHL_B ) )
             else:
@@ -263,17 +274,20 @@ class Comparison:
             if 'size' in dChanged:
                 # It is an anomaly if the size has changed, but not the hash.
                 # Report it as impossible, but also print it to the user anyway.
-                self.COUNT['IMPOSSIBLE'] += 1
+                if not beenCounted:
+                    self.COUNT['IMPOSSIBLE'] += 1
+                    beenCounted = True
                 print( '      Size: different (1st):', colored( str(hashA.size), LOG_COLOR_MHL_A ) )
                 print( '                      (2nd):', colored( str(hashB.size), LOG_COLOR_MHL_B ) )
             else:
                 print( '      ' + 'Size: identical: ' + str(hashA.size), 'bytes' )
 
             if 'lastmodificationdate' in dChanged:
-
-                self.COUNT['MINOR'] += 1
-                print( '      Modified date: different (1st):', colored( showDate(hashA.lastmodificationdate), LOG_COLOR_MHL_A ) )
-                print( '                               (2nd):', colored( showDate(hashB.lastmodificationdate), LOG_COLOR_MHL_B ) )
+                if not beenCounted:
+                    self.COUNT['MINOR'] += 1
+                    beenCounted = True
+                print( '      Modified date: different (1st):', colored( hashA.lastmodificationdate, LOG_COLOR_MHL_A ) )
+                print( '                               (2nd):', colored( hashB.lastmodificationdate, LOG_COLOR_MHL_B ) )
 
             # Briefly explain to the user what attributes were added/removed
             if len(dAdded) > 0:
@@ -286,7 +300,7 @@ class Comparison:
                 colored(dRemovedList, LOG_COLOR_MHL_B ) )
 
     def checkDelta(self, listA=False, listB=False):
-        if listA:
+        if listA is True:
             delta = self.deltaA
             # Refer to the opposite MHL to access and perform searches on it
             oppositeMHL = self.B
@@ -296,7 +310,7 @@ class Comparison:
             listLabelOpposite = '2nd'
             listColor = LOG_COLOR_MHL_A
             listColorOpposite = LOG_COLOR_MHL_B
-        elif listB:
+        elif listB is True:
             delta = self.deltaB
             oppositeMHL = self.A
 
@@ -316,7 +330,8 @@ class Comparison:
 
         for hash in deltaClean:
 
-            print(colored('DEBUG >>>', 'yellow'), hash.identifier, colored(hash.filename, 'green'))
+            # Debug
+            # print(colored('DEBUG >>>', 'yellow'), hash.identifier, colored(hash.filename, 'green'))
             # print('rh', hash.recordedHashes)
 
             foundHashPossible = None
@@ -431,8 +446,12 @@ class Comparison:
 
                     if 'lastmodificationdate' in dChanged:
                         self.COUNT['MINOR'] += 1
-                        print( '      Modified date: different (1st):', colored( showDate(hash.lastmodificationdate), LOG_COLOR_MHL_A ) )
-                        print( '                               (2nd):', colored( showDate(hashPossible.lastmodificationdate), LOG_COLOR_MHL_B ) )
+
+                        hModDate = showDate(hash.lastmodificationdate)
+                        hPModDate = showDate(hashPossible.lastmodificationdate)
+
+                        print( '      Modified date: different (1st):', colored( hModDate, LOG_COLOR_MHL_A ) )
+                        print( '                               (2nd):', colored( hPModDate, LOG_COLOR_MHL_B ) )
 
                     # Briefly explain to the user what attributes were added/removed
                     if len(dAdded) > 0:
