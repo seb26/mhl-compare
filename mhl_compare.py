@@ -10,11 +10,14 @@ import argparse
 
 import xmltodict
 from dateutil.parser import *
+from termcolor import colored
+from lib.dictdiffer import DictDiffer
 
 # Program defaults
 MHL_TIME_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
 HASH_TYPE_PREFERRED = 'xxhash64be'
 HASH_TYPES_ACCEPTABLE = [ 'xxhash64be', 'xxhash64', 'xxhash', 'md5', 'sha1' ]
+
 
 class MHL:
     def __init__(self, listObj, filepath):
@@ -93,6 +96,7 @@ class MHL:
             sum += h.size
         return sum
 
+
 class Hash(MHL):
     def __init__(self, hObj):
         self.parentMHL = False
@@ -155,51 +159,97 @@ class Comparison:
         self.deltaB = set()
         self.common = set()
 
-        self.COUNT_COMMON_MATCH = 0
-        self.COUNT_COMMON_MINOR_DIFFERENCE = 0
-        self.COUNT_DELTA_DIFFERENT_HASH = 0
-        self.COUNT_DELTA_MISSING = 0
-
-        self.results = {
-            'MATCH_ALL': [],
-            'MINOR': [],
-            'HASH_TYPE': [],
-            'FILE_CHANGED': [],
-            'MISSING': [],
-            'IMPOSSIBLE': []
-        }
+        self.COUNT_MATCH_ALL = 0
+        self.COUNT_MINOR = 0
+        self.COUNT_HASH_TYPE_DIFFERENT = 0
+        self.COUNT_HASH_CHANGED = 0
+        self.COUNT_MISSING = 0
+        self.COUNT_IMPOSSIBLE = 0
 
     """
     def recordResult(self,
-            objectA, objectB,
             hashType, hash, filename, directory, size, modifiedDate):
 
-        Provide objectA and objectB.
-        Provide the attributes as a triplet (Boolean, valueA, valueB)
+        # Need to have a brief check for structure of tuples and booleans
+        # Relying on them a lot here
+        # Will make debugging harder
 
+        entry = {
+            'hashType': hashType,
+            'hash': hash,
+            'filename': filename,
+            'directory': directory,
+            'size': size,
+            'modifiedDate': modifiedDate
+        }
+        if isinstance(objectA, HashNonexistant) or isinstance(objectB, HashNonexistant):
+            # If either object is nonexistant, then they belong in the MISSING category.
+            self.results['MISSING'].append(entry)
+        else:
+            # Otherwise, they are potentially genuine matches
+            # Continue to evaluate them
 
-        result = {}
-        if hashType[0] is True and hash[0] is True:
-            if size[0] is true:
-                if filename[0] is False or dirctory[0] is False or modifiedDate is False:
+            if hashType[0] is True and hash[0] is True:
+                # The hash types and the hash match. These are definitely the files
+                if size[0] is True:
+                    if filename[0] is False or directory[0] is False or modifiedDate is False:
+                        # At least one of the above attributes was Different
+                        self.results['MINOR'].append(entry)
+                    else:
+                        # All attributes match
+                        self.results['PERFECT'].append(entry)
+                else:
+                    # IMPOSSIBLE
+                    # How can a hash stay the same, but its size be Different?
+                    result['IMPOSSIBLE'].append(entry)
                     pass
             else:
-                # IMPOSSIBLE
+                if filename[0] is True:
+                    if size[0] is False or directory[0] is False or modifiedDate is False:
+                        self.results['FILE_CHANGED'].append(entry)
+                    else:
+                        # All attributes match
+                        # Summary: The hash types don't match, but everything else does
+                        self.results['HASH_TYPE'].append(entry)
+                else:
+                    # Filename doesn't match
+                    # Give up, if hashtype, hash and filename don't match, it ain't the same file, as far as I can reasonably judge.
+                    pass
 
-        example
-        best case scenario
-
-        recordResult(hashA, hashB,
-            hashType = (True, xxhash64be, xxhash64be)
-            hash = (True, abcdef, abcdef)
-            filename = (True, SEB_3046.JPG, SEB_3046.JPG)
-            directory = (True, DCIM/100EOS5D/, DCIM/100EOS5D/)
-            size = (True, 1024, 1024)
-            modifiedDate = (True, 2019..., 2019...)
-        """
+    recordResult(hashType, hash, filename, directory, size, modifiedDate)
 
 
-    def gatherDelta(self):
+    # For PERFECT results, don't process any further, just count them.
+    RESULTS_COUNT_PERFECT = len( result['PERFECT'] )
+
+    # For MINOR results
+    for e in self.results['MINOR']:
+        if e['filename'][0] == False:
+            print( '   ', e['filename'][1] )
+            print( '      Different: Filename (1st MHL):', colored( e['filename'][1], 'green' ) )
+            print( '      Different: Filename (2nd MHL):', colored( e['filename'][2], 'yellow' ) )
+        else:
+            print( '   ', e['filename'][1] )
+        if e['hash'][0] == False:
+            print( '      Different: Hash (1st MHL):', colored( e['hash'][1], 'green' ),
+                '({})'.format( e['hashType'][1] ) )
+            print( '      Different: Hash (1st MHL):', colored( e['hash'][2], 'yellow' ),
+                '({})'.format( e['hashType'][2] ) )
+        else:
+            print( '      Identical: Hash:', e['hash'][1], '({})'.format( e['hashType'][1] ) )
+        if e['directory'][0] == False:
+            print( '      Different: Directory (1st MHL):', colored( e['directory'][1], 'green' ) )
+            print( '      Different: Directory (2nd MHL):', colored( e['directory'][2], 'yellow' ) )
+        else:
+            print( '     ', e['directory'][1] )
+        if e['modifiedDate'][0] == False:
+            print( '      Different: Modified date (1st MHL):', colored( e['modifiedDate'][1], 'green' ) )
+            print( '      Different: Modified date (2nd MHL):', colored( e['modifiedDate'][2], 'yellow' ) )
+        else:
+            print( '     ', e['modifiedDate'][1] )
+    """
+
+    def createComparisonLists(self):
         # Get the identifiers just as strings
         setA = set( self.A.getIdentifiers() )
         setB = set( self.B.getIdentifiers() )
@@ -217,64 +267,82 @@ class Comparison:
         return True
 
     def checkCommon(self):
+
         for hashA, hashB in self.common:
 
-            # Iterate over all attributes (size, date) of the hash
-            for a, b in zip( hashA.__dict__.items(), hashB.__dict__.items() ):
-                # Example: a = ('identifier', '18fc3d609a8a3469')
-                # a[0] is the attribute
-                # a[1] is the value of the attribute
+            diff = DictDiffer( hashA.__dict__, hashB.__dict__ )
+            dAdded = diff.added()
+            dRemoved = diff.removed()
+            dChangedOnly = diff.changed()
+            dChanged = diff.new_or_changed()
+            dUnchanged = diff.unchanged()
 
-                if a[1] == b[1]:
-                    # In terms of this attribute, HashA and HashB match exactly
-                    # Pass, this is expected
-                    # print('match', a[0], a[1], b[1])
+            if 'filename' in dChanged:
+                self.COUNT_MINOR += 1
+                print( '  ' + colored( hashA.filename, 'green' ) )
+                print( '    Filename: different (1st):', colored( hashA.filename, 'green' ) )
+                print( '                        (2nd):', colored( hashB.filename, 'yellow' ) )
+            else:
+                print( '  ' + hashA.filename )
+            if 'directory' in dChanged:
+                self.COUNT_MINOR += 1
+                print( '      Directory: different (1st):', colored( hashA.directory, 'green' ) )
+                print( '                           (2nd):', colored( hashB.directory, 'yellow' ) )
+            else:
+                print( '      Directory: identical (' + hashA.directory + ')' )
 
-                    pass
-                else:
-                    # In terms of this attribute, HashA and HashB have different values
-                    # This may mean different filename, different date, or just simply additional hashes
-                    # Let's probe to find out
+            # Straight up print the hash, don't check it.
+            # At this stage, it's not possible for the hash to be different.
+            # A check has already been performed for the pair to even be included in this group.
+            print( '      Hash: identical ({}: {})'.format( hashA.identifierType, hashA.identifier ) )
 
-                    if a[0] == 'lastmodificationdate':
-                        # TODO: TIME DIFFERENCE BETWEEN MODIFICATION DATES
-                        # Make it human time?
-                        print('DIFFERENT: modification time:', a[1] - b[1])
-                    elif a[0] == 'size':
-                        print('DIFFERENT: size:', a[1], b[1], 'Difference', abs(a[1] - b[1]) )
-                    elif a[0] == 'recordedHashes':
-                        if hashA.identifierType == hashB.identifierType:
-                            # They have the same hash
-                            # Therefore, a difference in recordedHashes is not worth reporting
-                            pass
-                        else:
-                            print('These files have different hash types')
-                            print(hashA.identifierType, hashB.identifierType, a[1], b[1])
-                    elif a[0] == 'directory':
-                        print('DIFFERENT: directory:', a[1], b[1])
+            if 'size' in dChanged:
+                # It is an anomaly if the size has changed, but not the hash.
+                # Report it as impossible, but also print it to the user anyway.
+                self.IMPOSSIBLE += 1
+                print( '      Size: different (1st):', colored( str(hashA.size), 'green' ) )
+                print( '                      (2nd):', colored( str(hashB.size), 'yellow' ) )
+            else:
+                print( '      ' + 'Size: identical (' + str(hashA.size), 'bytes)' )
 
-    def checkDeltas(self):
+            if 'lastmodificationdate' in dChanged:
+                self.COUNT_MINOR += 1
+                print( '      Modified date: different (1st):', colored( hashA.lastmodificationdate, 'green' ) )
+                print( '                               (2nd):', colored( hashB.lastmodificationdate, 'yellow' ) )
+            else:
+                print( '      ' + hashA.lastmodificationdate )
+
+            # Briefly explain to the user what attributes were added/removed
+            if len(dAdded) > 0:
+                dAddedList = ', '.join( str(i) for i in dAdded )
+                print( '      These attributes exist in 1st only:',
+                    colored(dAddedList, 'green' ) )
+            if len(dRemoved) > 0:
+                dRemovedList = ', '.join( str(i) for i in dRemoved )
+                print( '      These attributes exist in 2nd only:',
+                colored(dRemovedList, 'yellow' ) )
+
+    def checkDelta(self, letter):
+
+        letter = letter.upper()
+        if not letter == 'A' or letter == 'B':
+            raise Exception('This delta function expects a string that is A or B')
+
+        delta = getattr(self, 'delta' + letter, False)
+        if delta == False:
+            raise exception('Delta object was just False, expected a list, delta results improperly reported?')
 
         # Clean out the HashNonexistant objects
-        deltaCleanA = [ h for h in self.deltaA if not isinstance(h, HashNonexistant) ]
-        deltaCleanB = [ h for h in self.deltaB if not isinstance(h, HashNonexistant) ]
+        deltaClean = [ h for h in delta if not isinstance(h, HashNonexistant) ]
 
-        # Assign them a letter so we can refer to it later
-        for hash in deltaCleanA:
-            hash.parentMHLLetter = 'A'
-        for hash in deltaCleanB:
-            hash.parentMHLLetter = 'B'
+        # Refer to the opposite MHL to access and perform searches on it
+        if letter == 'A':
+            oppositeMHL = self.B
+        elif letter == 'B':
+            oppositeMHL = self.A
 
-        for hash in deltaCleanA + deltaCleanB:
-            print('This hash exists only in:', hash.parentMHL)
-            print('    ', hash.filepath, '(' + str(hash.size) + ' bytes)' )
-            print('    Hashes: ', hash.recordedHashes)
-            print('    Investigate a little bit...')
-
-            if hash.parentMHLLetter == 'A':
-                oppositeMHL = self.B
-            else:
-                oppositeMHL = self.A
+        for hash in deltaClean:
+            # Use "hash.parentMHL"
 
             # Look for a match by filename
             hashPossible = oppositeMHL.findHashByAttribute( 'filename', hash.filename )
@@ -317,22 +385,26 @@ class Comparison:
 
 # Arguments
 parser = argparse.ArgumentParser()
-parser.add_argument( "FILE_A_PATH", help = "path to list A", type = str)
-parser.add_argument( "FILE_B_PATH", help = "path to list B", type = str)
+parser.add_argument( "FILE_A_PATH", help="path to list A", type=str)
+parser.add_argument( "FILE_B_PATH", help="path to list B", type=str)
 args = parser.parse_args()
 
 f = open(args.FILE_A_PATH, 'r')
-PARSE_FILE_A = xmltodict.parse( f.read(), dict_constructor = dict )
+PARSE_FILE_A = xmltodict.parse( f.read(), dict_constructor=dict )
 f.close()
 
 f = open(args.FILE_B_PATH, 'r')
-PARSE_FILE_B = xmltodict.parse( f.read(), dict_constructor = dict )
+PARSE_FILE_B = xmltodict.parse( f.read(), dict_constructor=dict )
 f.close()
 
 MHL_FILE_A = MHL(PARSE_FILE_A, args.FILE_A_PATH)
 MHL_FILE_B = MHL(PARSE_FILE_B, args.FILE_B_PATH)
 
 compare = Comparison(MHL_FILE_A, MHL_FILE_B)
-compare.gatherDelta()
+compare.createComparisonLists()
+print('#################### checkCommon')
 compare.checkCommon()
-compare.checkDeltas()
+print('#################### checkDelta A')
+# compare.checkDelta('A')
+print('#################### checkDelta B')
+# compare.checkDelta('B')
