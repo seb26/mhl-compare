@@ -10,18 +10,29 @@ from operator import attrgetter
 import argparse
 
 import xmltodict
-from dateutil.parser import *
+from dateutil import parser as dateutilParser
+import pytz
 from termcolor import colored
 from lib.dictdiffer import DictDiffer
 
 # Program defaults
-MHL_TIME_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
 HASH_TYPE_PREFERRED = 'xxhash64be'
 HASH_TYPES_ACCEPTABLE = [ 'xxhash64be', 'xxhash64', 'xxhash', 'md5', 'sha1' ]
+
+LOG_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 LOG_COLOR_MHL_A = 'green'
 LOG_COLOR_MHL_B = 'yellow'
 LOG_COLOR_WARNING = 'red'
+LOG_COLOR_INFORMATION = 'cyan'
+
+def showDate(dt):
+    if not isinstance(dt, datetime):
+        # If for some reason, a datetime object isn't passed,
+        # just return whatever was given to you
+        return dt
+    else:
+        return dt.strftime(LOG_TIME_FORMAT)
 
 class MHL:
     def __init__(self, listObj, filepath):
@@ -128,12 +139,16 @@ class Hash(MHL):
         hObjKeys = hObj.keys()
 
         # Try do the date parsing, hopefully without errors
-        self.lastmodificationdate = parse( hObj['lastmodificationdate'] )
+        modDate = dateutilParser.parse( hObj['lastmodificationdate'] )
+        if modDate.tzinfo is None:
+            self.lastmodificationdate = modDate.replace(tzinfo=pytz.UTC)
+        else:
+            self.lastmodificationdate = modDate
 
         if 'creationdate' in hObjKeys:
-            self.creationdate = parse( hObj['creationdate'] )
+            self.creationdate = dateutilParser.parse( hObj['creationdate'] )
         if 'hashdate' in hObjKeys:
-            self.hashdate = parse( hObj['hashdate'] )
+            self.hashdate = dateutilParser.parse( hObj['hashdate'] )
 
         # Now, we search for acceptable hash types
         # And because our preferred hash is first in the list, it gets assigned as the identifier
@@ -255,9 +270,10 @@ class Comparison:
                 print( '      ' + 'Size: identical: ' + str(hashA.size), 'bytes' )
 
             if 'lastmodificationdate' in dChanged:
+
                 self.COUNT['MINOR'] += 1
-                print( '      Modified date: different (1st):', colored( hashA.lastmodificationdate, LOG_COLOR_MHL_A ) )
-                print( '                               (2nd):', colored( hashB.lastmodificationdate, LOG_COLOR_MHL_B ) )
+                print( '      Modified date: different (1st):', colored( showDate(hashA.lastmodificationdate), LOG_COLOR_MHL_A ) )
+                print( '                               (2nd):', colored( showDate(hashB.lastmodificationdate), LOG_COLOR_MHL_B ) )
 
             # Briefly explain to the user what attributes were added/removed
             if len(dAdded) > 0:
@@ -364,18 +380,18 @@ class Comparison:
                             self.COUNT['HASH_CHANGED'] += 1
                             beenCounted = True
                         print( colored('      Hash: These hashes are different from each other. It is likely the file has changed.', LOG_COLOR_WARNING ) )
-                    print('      Hash ({}):'.format(listLabel),
-                        colored('{} ({})'.format(hash.identifier, hash.identifierType), listColor)
-                    )
-                    print('      Hash ({}):'.format(listLabelOpposite),
-                        colored('{} ({})'.format(hashPossible.identifier, hashPossible.identifierType), listColorOpposite)
-                    )
                 else:
                     # Hash type is not the same,
                     if not beenCounted:
                         self.COUNT['HASH_TYPE_DIFFERENT'] += 1
                         beenCounted = True
-                    print('#### EMERGENCY THE HASHES ARE DIFFERENT TYPES')
+                    print(colored("      Hash: These hashes are of different types. It's not possible to compare them.", LOG_COLOR_INFORMATION))
+                print('      Hash ({}):'.format(listLabel),
+                colored('{} ({})'.format(hash.identifier, hash.identifierType), listColor)
+                )
+                print('      Hash ({}):'.format(listLabelOpposite),
+                colored('{} ({})'.format(hashPossible.identifier, hashPossible.identifierType), listColorOpposite)
+                )
 
                 if { 'filename', 'directory', 'size', 'lastmodificationdate' }.issubset(dUnchanged):
                     # If neither of these variables have changed, then we almost have a clean match.
@@ -415,8 +431,8 @@ class Comparison:
 
                     if 'lastmodificationdate' in dChanged:
                         self.COUNT['MINOR'] += 1
-                        print( '      Modified date: different (1st):', colored( hash.lastmodificationdate, LOG_COLOR_MHL_A ) )
-                        print( '                               (2nd):', colored( hashPossible.lastmodificationdate, LOG_COLOR_MHL_B ) )
+                        print( '      Modified date: different (1st):', colored( showDate(hash.lastmodificationdate), LOG_COLOR_MHL_A ) )
+                        print( '                               (2nd):', colored( showDate(hashPossible.lastmodificationdate), LOG_COLOR_MHL_B ) )
 
                     # Briefly explain to the user what attributes were added/removed
                     if len(dAdded) > 0:
