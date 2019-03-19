@@ -1,0 +1,12 @@
+mainDifference,scenarioLevel,function,hashType,hash,filename,directory,size,modificationDate,creationDate*
+Complete,Best,Common,match,match,match,match,match,match,*
+Date,Minor,Common,match,match,match,match,match,DIFFERENT,*
+Filename,Minor,Common,match,match,DIFFERENT,match,match,match,*
+Directory,Minor,Common,match,match,match,DIFFERENT,match,match,*
+Size,IMPOSSIBLE,NA,match,match,match,match,DIFFERENT,match,*
+Hash type,Major,Delta,DIFFERENT,DIFFERENT,match,match,match,match,*
+Hash type,Major,Delta,DIFFERENT,DIFFERENT,match,DIFFERENT,match,match,*
+File changed,Major,Delta,match,DIFFERENT,match,match,DIFFERENT,DIFFERENT,*
+File changed moved directory,Major,Delta,match,DIFFERENT,match,DIFFERENT,DIFFERENT,DIFFERENT,*
+File changed,NOT CONSIDERED A MATCH,NA,match,DIFFERENT,DIFFERENT,NA,NA,NA,*
+Missing,Missing,Delta,NO MATCH,NO MATCH,NO MATCH,NA,NA,NA,NA

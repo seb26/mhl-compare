@@ -155,6 +155,50 @@ class Comparison:
         self.deltaB = set()
         self.common = set()
 
+        self.COUNT_COMMON_MATCH = 0
+        self.COUNT_COMMON_MINOR_DIFFERENCE = 0
+        self.COUNT_DELTA_DIFFERENT_HASH = 0
+        self.COUNT_DELTA_MISSING = 0
+
+        self.results = {
+            'MATCH_ALL': [],
+            'MINOR': [],
+            'HASH_TYPE': [],
+            'FILE_CHANGED': [],
+            'MISSING': [],
+            'IMPOSSIBLE': []
+        }
+
+    """
+    def recordResult(self,
+            objectA, objectB,
+            hashType, hash, filename, directory, size, modifiedDate):
+
+        Provide objectA and objectB.
+        Provide the attributes as a triplet (Boolean, valueA, valueB)
+
+
+        result = {}
+        if hashType[0] is True and hash[0] is True:
+            if size[0] is true:
+                if filename[0] is False or dirctory[0] is False or modifiedDate is False:
+                    pass
+            else:
+                # IMPOSSIBLE
+
+        example
+        best case scenario
+
+        recordResult(hashA, hashB,
+            hashType = (True, xxhash64be, xxhash64be)
+            hash = (True, abcdef, abcdef)
+            filename = (True, SEB_3046.JPG, SEB_3046.JPG)
+            directory = (True, DCIM/100EOS5D/, DCIM/100EOS5D/)
+            size = (True, 1024, 1024)
+            modifiedDate = (True, 2019..., 2019...)
+        """
+
+
     def gatherDelta(self):
         # Get the identifiers just as strings
         setA = set( self.A.getIdentifiers() )
@@ -185,6 +229,7 @@ class Comparison:
                     # In terms of this attribute, HashA and HashB match exactly
                     # Pass, this is expected
                     # print('match', a[0], a[1], b[1])
+
                     pass
                 else:
                     # In terms of this attribute, HashA and HashB have different values
