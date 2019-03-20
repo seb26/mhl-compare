@@ -153,5 +153,5 @@ dmypy.json
 # End of https://www.gitignore.io/api/macos,python
 
 # Some binary files I don't want to share
-.jpg
-.pdf
+*.jpg
+*.pdf
