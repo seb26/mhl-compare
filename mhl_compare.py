@@ -21,6 +21,11 @@ HASH_TYPE_PREFERRED = 'xxhash64be'
 HASH_TYPES_ACCEPTABLE = [ 'xxhash64be', 'xxhash64', 'xxhash', 'md5', 'sha1' ]
 
 LOG_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
+LOG_VERBOSE = False # By default, don't show detail about which files changed
+
+LOG_VERSION = '0.1'
+LOG_STARTUP_LINE = 'mhl-compare (v{}) (Python)'.format( LOG_VERSION )
+LOG_COPYRIGHT_LINE = '(C) 2019; Author: Sebastian Reategui; License: MIT'
 
 LOG_COLOR_MHL_A = 'green'
 LOG_COLOR_MHL_B = 'yellow'
@@ -36,7 +41,12 @@ def showDate(dt):
         return dt.strftime(LOG_TIME_FORMAT)
 
 def showSize(bytes):
-    return humanize.naturalsize(bytes, binary=True) + "({})".format(bytes)
+    return humanize.naturalsize(bytes, binary=True) + " ({} bytes)".format(bytes)
+
+def logDetail(*args, **kwargs):
+    if LOG_VERBOSE:
+        print(*args, **kwargs, end='\n')
+    return
 
 class MHL:
     def __init__(self, listObj, filepath):
@@ -105,15 +115,15 @@ class MHL:
     def count(self):
         return len(self.hashes)
 
+    def totalSize(self):
+        sum = 0
+        for h in self.hashes.values():
+            sum += h.size
+        return showSize(sum)
+
     def getIdentifiers(self):
         all = [ v.identifier for v in self.hashes.values() ]
         return sorted(all)
-
-    def getSize(self):
-        sum = 0
-        for h in self.hashes:
-            sum += h.size
-        return sum
 
 
 class Hash(MHL):
@@ -139,6 +149,7 @@ class Hash(MHL):
             # Probably should throw an error and let the user know their MHL is malformed
             self.filepath = False
         self.size = int( hObj['size'] )
+        self.sizeHuman = showSize(self.size)
 
         hObjKeys = hObj.keys()
 
@@ -231,15 +242,6 @@ class Comparison:
             dChanged = diff.changed()
             dUnchanged = diff.unchanged()
 
-            # Debugging
-            """
-            print(dAdded)
-            print(dRemoved)
-            print(dChangedOnly)
-            print(dChanged)
-            print(dUnchanged)
-            """
-
             if { 'filename', 'directory', 'size', 'lastmodificationdate' }.issubset(dUnchanged):
                 # If neither of these variables have changed, then we have a clean match.
                 # Report it and move on.
@@ -252,24 +254,24 @@ class Comparison:
                 if not beenCounted:
                     self.COUNT['MINOR'] += 1
                     beenCounted = True
-                print( '  ' + colored( hashA.filename, 'green' ) )
-                print( '    Filename: different (1st):', colored( hashA.filename, LOG_COLOR_MHL_A ) )
-                print( '                        (2nd):', colored( hashB.filename, LOG_COLOR_MHL_B ) )
+                logDetail( '  ' + colored( hashA.filename, 'green' ) )
+                logDetail( '    Filename: different (1st):', colored( hashA.filename, LOG_COLOR_MHL_A ) )
+                logDetail( '                        (2nd):', colored( hashB.filename, LOG_COLOR_MHL_B ) )
             else:
-                print( '  ' + hashA.filename )
+                logDetail( '  ' + hashA.filename )
             if 'directory' in dChanged:
                 if not beenCounted:
                     self.COUNT['MINOR'] += 1
                     beenCounted = True
-                print( '      Path: different (1st):', colored( hashA.directory, LOG_COLOR_MHL_A ) )
-                print( '                      (2nd):', colored( hashB.directory, LOG_COLOR_MHL_B ) )
+                logDetail( '      Path: different (1st):', colored( hashA.directory, LOG_COLOR_MHL_A ) )
+                logDetail( '                      (2nd):', colored( hashB.directory, LOG_COLOR_MHL_B ) )
             else:
-                print( '      Path: identical: ' + hashA.directory )
+                logDetail( '      Path: identical: ' + hashA.directory )
 
             # Straight up print the hash, don't check it.
             # At this stage, it's not possible for the hash to be different.
             # A check has already been performed for the pair to even be included in this group.
-            print( '      Hash: identical: {} ({})'.format( hashA.identifier, hashA.identifierType ) )
+            logDetail( '      Hash: identical: {} ({})'.format( hashA.identifier, hashA.identifierType ) )
 
             if 'size' in dChanged:
                 # It is an anomaly if the size has changed, but not the hash.
@@ -277,26 +279,26 @@ class Comparison:
                 if not beenCounted:
                     self.COUNT['IMPOSSIBLE'] += 1
                     beenCounted = True
-                print( '      Size: different (1st):', colored( str(hashA.size), LOG_COLOR_MHL_A ) )
-                print( '                      (2nd):', colored( str(hashB.size), LOG_COLOR_MHL_B ) )
+                logDetail( '      Size: different (1st):', colored( hashA.sizeHuman, LOG_COLOR_MHL_A ) )
+                logDetail( '                      (2nd):', colored( hashB.sizeHuman, LOG_COLOR_MHL_B ) )
             else:
-                print( '      ' + 'Size: identical: ' + str(hashA.size), 'bytes' )
+                logDetail( '      ' + 'Size: identical: ' + hashA.sizeHuman )
 
             if 'lastmodificationdate' in dChanged:
                 if not beenCounted:
                     self.COUNT['MINOR'] += 1
                     beenCounted = True
-                print( '      Modified date: different (1st):', colored( hashA.lastmodificationdate, LOG_COLOR_MHL_A ) )
-                print( '                               (2nd):', colored( hashB.lastmodificationdate, LOG_COLOR_MHL_B ) )
+                logDetail( '      Modified date: different (1st):', colored( hashA.lastmodificationdate, LOG_COLOR_MHL_A ) )
+                logDetail( '                               (2nd):', colored( hashB.lastmodificationdate, LOG_COLOR_MHL_B ) )
 
             # Briefly explain to the user what attributes were added/removed
             if len(dAdded) > 0:
                 dAddedList = ', '.join( str(i) for i in dAdded )
-                print( '      These attributes exist in 1st only:',
+                logDetail( '      These attributes exist in 1st only:',
                     colored(dAddedList, LOG_COLOR_MHL_A ) )
             if len(dRemoved) > 0:
                 dRemovedList = ', '.join( str(i) for i in dRemoved )
-                print( '      These attributes exist in 2nd only:',
+                logDetail( '      These attributes exist in 2nd only:',
                 colored(dRemovedList, LOG_COLOR_MHL_B ) )
 
     def checkDelta(self, listA=False, listB=False):
@@ -320,7 +322,7 @@ class Comparison:
             listColor = LOG_COLOR_MHL_B
             listColorOpposite = LOG_COLOR_MHL_A
         else:
-            print("INTERNAL: Couldn't check deltas, none were specified. Specify one")
+            raise Exception("INTERNAL: Couldn't check deltas, none were specified. Specify one")
             return
 
         # Quickly clean Nonexistent objects out if they exist
@@ -378,7 +380,7 @@ class Comparison:
                 dChanged = diff.changed()
 
                 # First print a filename so everything fits underneath it.
-                print( '  ' + hash.filename )
+                logDetail( '  ' + hash.filename )
 
                 # Then begin testing.
                 if hash.identifierType == hashPossible.identifierType:
@@ -388,23 +390,23 @@ class Comparison:
                         if not beenCounted:
                             self.COUNT['PERFECT'] += 1
                             beenCounted = True
-                        print('      Hash: identical.')
+                        logDetail('      Hash: identical.')
                     else:
                         # But the hashes are different. File has changed?
                         if not beenCounted:
                             self.COUNT['HASH_CHANGED'] += 1
                             beenCounted = True
-                        print( colored('      Hash: These hashes are different from each other. It is likely the file has changed.', LOG_COLOR_WARNING ) )
+                        logDetail( colored('      Hash: These hashes are different from each other. It is likely the files were different between the time the MHLs were generated.', LOG_COLOR_WARNING ) )
                 else:
-                    # Hash type is not the same,
+                    # Hash type is not the same. Unlikely to be comparable.
                     if not beenCounted:
                         self.COUNT['HASH_TYPE_DIFFERENT'] += 1
                         beenCounted = True
-                    print(colored("      Hash: These hashes are of different types. It's not possible to compare them.", LOG_COLOR_INFORMATION))
-                print('      Hash ({}):'.format(listLabel),
+                    logDetail(colored("      Hash: These hashes are of different types. It's not possible to compare them.", LOG_COLOR_INFORMATION))
+                logDetail('      Hash ({}):'.format(listLabel),
                 colored('{} ({})'.format(hash.identifier, hash.identifierType), listColor)
                 )
-                print('      Hash ({}):'.format(listLabelOpposite),
+                logDetail('      Hash ({}):'.format(listLabelOpposite),
                 colored('{} ({})'.format(hashPossible.identifier, hashPossible.identifierType), listColorOpposite)
                 )
 
@@ -421,46 +423,52 @@ class Comparison:
                         if not beenCounted:
                             self.COUNT['MINOR'] += 1
                             beenCounted = True
-                        print( '    Filename: different (1st):', colored( hash.filename, LOG_COLOR_MHL_A ) )
-                        print( '                        (2nd):', colored( hashPossible.filename, LOG_COLOR_MHL_B ) )
+                        logDetail( '    Filename: different (1st):', colored( hash.filename, LOG_COLOR_MHL_A ) )
+                        logDetail( '                        (2nd):', colored( hashPossible.filename, LOG_COLOR_MHL_B ) )
                     else:
                         # If the filename is the same, it has already been declared closer to the top.
                         pass
 
                     if 'directory' in dChanged:
-                        self.COUNT['MINOR'] += 1
-                        print( '      Path: different (1st):', colored( hash.directory, LOG_COLOR_MHL_A ) )
-                        print( '                      (2nd):', colored( hashPossible.directory, LOG_COLOR_MHL_B ) )
+                        if not beenCounted:
+                            self.COUNT['MINOR'] += 1
+                            beenCounted = True
+                        logDetail( '      Path: different (1st):', colored( hash.directory, LOG_COLOR_MHL_A ) )
+                        logDetail( '                      (2nd):', colored( hashPossible.directory, LOG_COLOR_MHL_B ) )
                     else:
-                        print( '      Path: identical:', hash.directory )
+                        logDetail( '      Path: identical:', hash.directory )
 
 
                     if 'size' in dChanged:
                         # It is an anomaly if the size has changed, but not the hash.
                         # Report it as impossible, but also print it to the user anyway.
-                        self.COUNT['IMPOSSIBLE'] += 1
-                        print( '      Size: different (1st):', colored( str(hash.size), LOG_COLOR_MHL_A ) )
-                        print( '                      (2nd):', colored( str(hashPossible.size), LOG_COLOR_MHL_B ) )
+                        if not beenCounted:
+                            self.COUNT['IMPOSSIBLE'] += 1
+                            beenCounted = True
+                        logDetail( '      Size: different (1st):', colored( hash.sizeHuman, LOG_COLOR_MHL_A ) )
+                        logDetail( '                      (2nd):', colored( hashPossible.sizeHuman, LOG_COLOR_MHL_B ) )
                     else:
-                        print( '      ' + 'Size: identical: ' + str(hashPossible.size), 'bytes' )
+                        logDetail( '      ' + 'Size: identical: ' + hashPossible.sizeHuman )
 
                     if 'lastmodificationdate' in dChanged:
-                        self.COUNT['MINOR'] += 1
+                        if not beenCounted:
+                            self.COUNT['MINOR'] += 1
+                            beenCounted = True
 
                         hModDate = showDate(hash.lastmodificationdate)
                         hPModDate = showDate(hashPossible.lastmodificationdate)
 
-                        print( '      Modified date: different (1st):', colored( hModDate, LOG_COLOR_MHL_A ) )
-                        print( '                               (2nd):', colored( hPModDate, LOG_COLOR_MHL_B ) )
+                        logDetail( '      Modified date: different (1st):', colored( hModDate, LOG_COLOR_MHL_A ) )
+                        logDetail( '                               (2nd):', colored( hPModDate, LOG_COLOR_MHL_B ) )
 
                     # Briefly explain to the user what attributes were added/removed
                     if len(dAdded) > 0:
                         dAddedList = ', '.join( str(i) for i in dAdded )
-                        print( '      These attributes exist in 1st only:',
+                        logDetail( '      These attributes exist in 1st only:',
                             colored(dAddedList, LOG_COLOR_MHL_A ) )
                     if len(dRemoved) > 0:
                         dRemovedList = ', '.join( str(i) for i in dRemoved )
-                        print( '      These attributes exist in 2nd only:',
+                        logDetail( '      These attributes exist in 2nd only:',
                         colored(dRemovedList, LOG_COLOR_MHL_B ) )
 
                     pass
@@ -468,15 +476,90 @@ class Comparison:
             if foundHashPossible == False:
                 # Begin to print the results
                 self.COUNT['MISSING'] += 1
-                print('This file only exists in',
+                logDetail('This file only exists in',
                     colored(listLabel + ' MHL', listColor) + ':' )
-                print('  ' + colored(hash.filename, listColor))
-                print( '      ' + 'Path:', hash.directory )
-                print( '      ' + 'Size:', str(hash.size), 'bytes' )
-                print( '      ' + 'Hash:', hash.identifier, '({})'.format(hash.identifierType ) )
+                logDetail('  ' + colored(hash.filename, listColor))
+                logDetail( '      ' + 'Path:', hash.directory )
+                logDetail( '      ' + 'Size:', hash.sizeHuman )
+                logDetail( '      ' + 'Hash:', hash.identifier, '({})'.format(hash.identifierType ) )
+
+    def printInfo(self):
+        count_files_A = str( self.A.count() ) + " files"
+        count_files_B = str( self.B.count() ) + " files"
+
+        if LOG_VERBOSE:
+            print('')
+            print('---')
+            print('')
+            print('Summary:')
+        else:
+            print('')
+        print('1st MHL file:', colored(args.FILE_A_PATH, LOG_COLOR_MHL_A) )
+        print('             ', colored(count_files_A, LOG_COLOR_MHL_A) )
+        print('             ', colored(self.A.totalSize(), LOG_COLOR_MHL_A) )
+        print('2nd MHL file:', colored(args.FILE_B_PATH, LOG_COLOR_MHL_B) )
+        print('             ', colored(count_files_B, LOG_COLOR_MHL_B) )
+        print('             ', colored(self.B.totalSize(), LOG_COLOR_MHL_B) )
+        return
 
     def printCount(self):
-        print( self.COUNT )
+        outcomes = {
+            'PERFECT': {
+                'desc': 'matched perfectly'
+                },
+            'MINOR': {
+                'desc': 'matched, with minor differences in name, directory or modification date'
+                },
+            'HASH_TYPE_DIFFERENT': {
+                'desc': 'had incomparable hash types and could not be compared',
+                'color': LOG_COLOR_INFORMATION
+                },
+            'HASH_CHANGED': {
+                'desc': 'had different hashes, indicating the files were different between the time the MHLs were generated',
+                'desc_singular': 'had different hashes, indicating it was different between the time the MHLs were generated',
+                'color': LOG_COLOR_WARNING
+                },
+            'MISSING': {
+                'desc': 'were present only in one MHL or the other',
+                'desc_singular': 'was present only in one MHL or the other'
+                },
+            'IMPOSSIBLE': {
+                'desc': 'anomaly -- MHL was likely modified or something unusual happened'
+                }
+            }
+        for label in outcomes.values():
+            # If a singular description ('was' vs. 'were') is not defined, just use the regular description.
+            if not 'desc_singular' in label.keys():
+                label['desc_singular'] = label['desc']
+            # If a color is not defined, don't use any.
+            if not 'color' in label.keys():
+                label['color'] = None
+
+        print('')
+        print('---')
+        print('')
+        print('Observations:')
+        for category, count in self.COUNT.items():
+            line_color = outcomes[category]['color']
+            if count == 0:
+                # Don't mention empty categories, not relevant
+                continue
+            elif count == 1:
+                count_words = str(count) + " file"
+                label_type = 'desc_singular'
+            else:
+                count_words = str(count) + " files"
+                label_type = 'desc'
+
+            print( colored(
+                "    " + count_words + " " + outcomes[category][label_type],
+                line_color)
+            )
+        if not LOG_VERBOSE:
+            print('')
+            print('    Run the check again with --info to view details.')
+
+        # print( self.COUNT )
         return
 
 
@@ -484,7 +567,12 @@ class Comparison:
 parser = argparse.ArgumentParser()
 parser.add_argument( "FILE_A_PATH", help="path to list A", type=str)
 parser.add_argument( "FILE_B_PATH", help="path to list B", type=str)
+parser.add_argument( "-v", "--verbose", "--info",
+    help="gives greater detail on all files affected", action="store_true")
 args = parser.parse_args()
+
+if args.verbose:
+    LOG_VERBOSE = True
 
 f = open(args.FILE_A_PATH, 'r')
 PARSE_FILE_A = xmltodict.parse( f.read(), dict_constructor=dict )
@@ -497,12 +585,21 @@ f.close()
 MHL_FILE_A = MHL(PARSE_FILE_A, args.FILE_A_PATH)
 MHL_FILE_B = MHL(PARSE_FILE_B, args.FILE_B_PATH)
 
+print('---')
+print(LOG_STARTUP_LINE)
+print(LOG_COPYRIGHT_LINE)
+print('---')
+print('')
+
 compare = Comparison(MHL_FILE_A, MHL_FILE_B)
 compare.createComparisonLists()
-print('#################### checkCommon')
+# print('#################### checkCommon')
 compare.checkCommon()
-print('#################### checkDelta A')
+# print('#################### checkDelta A')
 compare.checkDelta(listA=True)
-print('#################### checkDelta B')
+# print('#################### checkDelta B')
 compare.checkDelta(listB=True)
+compare.printInfo()
 compare.printCount()
+print('')
+print('---')

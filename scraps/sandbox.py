@@ -54,3 +54,13 @@ Lyotard2:mhl-compare seb$ xxhsum -H1 --little-endian SEB_3719.JPG
 """
 
 pass
+
+ePrint = lambda *args, **kwargs: print(*args, **kwargs, end='...\n')
+
+ePrint('hi', 'lol')
+
+def logDetail(*args, **kwargs):
+    print(*args, **kwargs, end='...\n')
+    return
+
+logDetail('hi', 'lol')
