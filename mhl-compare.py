@@ -26,7 +26,7 @@ LOG_VERBOSE = False # By default, don't show detail about which files changed
 
 LOG_VERSION = '0.1'
 LOG_STARTUP_LINE = 'mhl-compare (v{}) (Python)'.format( LOG_VERSION )
-LOG_COPYRIGHT_LINE = '(C) 2019; Author: Sebastian Reategui; License: MIT'
+LOG_COPYRIGHT_LINE = '(C) 2019 Sebastian Reategui -- MIT License'
 
 LOG_COLOR_MHL_A = 'green'
 LOG_COLOR_MHL_B = 'yellow'
@@ -275,8 +275,8 @@ class Comparison:
                     self.COUNT['MINOR'] += 1
                     beenCounted = True
                 logDetail( '  ' + colored( hashA.filename, 'green' ) )
-                logDetail( '    Filename: different (1st):', colored( hashA.filename, LOG_COLOR_MHL_A ) )
-                logDetail( '                        (2nd):', colored( hashB.filename, LOG_COLOR_MHL_B ) )
+                logDetail( '      Filename: different (1st):', colored( hashA.filename, LOG_COLOR_MHL_A ) )
+                logDetail( '                          (2nd):', colored( hashB.filename, LOG_COLOR_MHL_B ) )
             else:
                 logDetail( '  ' + hashA.filename )
             if 'directory' in dChanged:
@@ -443,8 +443,8 @@ class Comparison:
                         if not beenCounted:
                             self.COUNT['MINOR'] += 1
                             beenCounted = True
-                        logDetail( '    Filename: different (1st):', colored( hash.filename, LOG_COLOR_MHL_A ) )
-                        logDetail( '                        (2nd):', colored( hashPossible.filename, LOG_COLOR_MHL_B ) )
+                        logDetail( '      Filename: different (1st):', colored( hash.filename, LOG_COLOR_MHL_A ) )
+                        logDetail( '                          (2nd):', colored( hashPossible.filename, LOG_COLOR_MHL_B ) )
                     else:
                         # If the filename is the same, it has already been declared closer to the top.
                         pass
