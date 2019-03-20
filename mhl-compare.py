@@ -494,10 +494,10 @@ class Comparison:
             print('Summary:')
         else:
             print('')
-        print('1st MHL file:', colored(args.FILE_A_PATH, LOG_COLOR_MHL_A) )
+        print('1st MHL file:', colored(self.A.filepath, LOG_COLOR_MHL_A) )
         print('             ', colored(count_files_A, LOG_COLOR_MHL_A) )
         print('             ', colored(self.A.totalSize(), LOG_COLOR_MHL_A) )
-        print('2nd MHL file:', colored(args.FILE_B_PATH, LOG_COLOR_MHL_B) )
+        print('2nd MHL file:', colored(self.B.filepath, LOG_COLOR_MHL_B) )
         print('             ', colored(count_files_B, LOG_COLOR_MHL_B) )
         print('             ', colored(self.B.totalSize(), LOG_COLOR_MHL_B) )
         return
@@ -565,25 +565,45 @@ class Comparison:
 
 # Arguments
 parser = argparse.ArgumentParser()
-parser.add_argument( "FILE_A_PATH", help="path to list A", type=str)
-parser.add_argument( "FILE_B_PATH", help="path to list B", type=str)
+parser.add_argument( "PATH_A", help="path to list A", type=str)
+parser.add_argument( "PATH_B", help="path to list B", type=str)
 parser.add_argument( "-v", "--verbose", "--info",
     help="gives greater detail on all files affected", action="store_true")
 args = parser.parse_args()
 
+
+if args.PATH_A and args.PATH_B:
+    pass
+else:
+    raise Exception('Two files need to be included when you run the command')
+
+foundA = os.path.isfile(args.PATH_A)
+foundB = os.path.isfile(args.PATH_B)
+
+if foundA == True and foundB == True:
+    file_path_A = args.PATH_A
+    file_path_B = args.PATH_B
+else:
+    not_found_string = ''
+    if foundA == False:
+        not_found_string += "    " + args.PATH_A + "\n"
+    if foundB == False:
+        not_found_string += "    " + args.PATH_B + "\n"
+    raise FileNotFoundError('Could not find these MHL file(s). Check the path for typos?\n' + not_found_string)
+
 if args.verbose:
     LOG_VERBOSE = True
 
-f = open(args.FILE_A_PATH, 'r')
+f = open(file_path_A, 'r')
 PARSE_FILE_A = xmltodict.parse( f.read(), dict_constructor=dict )
 f.close()
 
-f = open(args.FILE_B_PATH, 'r')
+f = open(file_path_B, 'r')
 PARSE_FILE_B = xmltodict.parse( f.read(), dict_constructor=dict )
 f.close()
 
-MHL_FILE_A = MHL(PARSE_FILE_A, args.FILE_A_PATH)
-MHL_FILE_B = MHL(PARSE_FILE_B, args.FILE_B_PATH)
+MHL_FILE_A = MHL(PARSE_FILE_A, file_path_A)
+MHL_FILE_B = MHL(PARSE_FILE_B, file_path_B)
 
 print('---')
 print(LOG_STARTUP_LINE)
