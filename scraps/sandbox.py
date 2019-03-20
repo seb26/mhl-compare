@@ -1,66 +1,36 @@
-from dateutil import parser as dateutilParser
-import datetime
-from dateutil.tz import tzutc
-import humanize
-
-aString = "2019-03-17T16:53:30"
-bString = "2019-03-17T13:55:10Z"
-
-a = dateutilParser.parse(aString).replace(tzinfo=tzutc())
-b = dateutilParser.parse(bString)
-
-"""
-print( b - a )
-
-def showTimeDiff(a, b):
-    if a > b:
-        diff = a - b
-    else:
-        diff = b - a
-    human = humanize.naturaldate(diff)
-    # Trim off " ago" because it is wrong
-    return human
-
-print( showTimeDiff(a, b) )
-"""
-
 import xxhash
 
 x = xxhash.xxh64()
 x.update( b'Hey' )
 x.hexdigest()
 
-LE = "5a518dbf43939fe0"
-BE = "e09f9343bf8d515a"
+be = "653d2888be59715a"
+le = "5a7159be88283d65"
 
-ba = bytearray.fromhex("AA55CC3301AA55CC330F234567")
-s = ''.join(format(x, '02x') for x in ba)
+import codecs
 
-print(ba)
-print(s)
+def hashConvertEndian(hashString):
+    return codecs.encode(codecs.decode(hashString, 'hex')[::-1], 'hex').decode()
+
+print( 'be to le', hashConvertEndian(be) )
+print( 'le to be', hashConvertEndian(le) )
 
 """
-Lyotard2:mhl-compare seb$ xxhsum -H1 SEB_3719.JPG
-e09f9343bf8d515a  SEB_3719.JPG
-Lyotard2:mhl-compare seb$ xxhsum -H1 --little-endian SEB_3719.JPG
-5a518dbf43939fe0  SEB_3719.JPG
+aa = codecs.decode(le, 'hex')[::-1]
+d = codecs.encode(aa, 'hex').decode()
 
-    <hash>
-        <file>SEB_3719.JPG</file>
-        <size>6338411</size>
-        <xxhash64>  5a518dbf43939fe0 </xxhash64>
-        <xxhash64be> e09f9343bf8d515a </xxhash64be>
-    </hash>
+print(d)
 """
 
-pass
 
-ePrint = lambda *args, **kwargs: print(*args, **kwargs, end='...\n')
+"""
+  SEB_3720.CR2
+      Hash: These hashes are of different types. It's not possible to compare them.
+      Hash (1st): 653d2888be59715a (xxhash64be)
+      Hash (2nd): 5a7159be88283d65 (xxhash64)
 
-ePrint('hi', 'lol')
 
-def logDetail(*args, **kwargs):
-    print(*args, **kwargs, end='...\n')
-    return
 
-logDetail('hi', 'lol')
+1st:36 35 33 64 32 38 38 38 62 65 35 39 37 31 35 61
+2nd:35 61 37 31 35 39 62 65 38 38 32 38 33 64 36 35
+"""

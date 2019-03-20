@@ -12,9 +12,11 @@ Useful when comparing two copies of media files that are intended to be the same
 ### Example scenario
 You use a MHL-generating program to copy video files stored on an SD card, to a folder in your local workspace. You give the SD card to a colleague and they make a similar copy with an MHL-generating program to an LTFS tape drive on their system. Later, your colleague reports an issue opening one of the video files, but you are unable to replicate the issue on your local copy.
 
-Both you and your colleague have the capacity to run a MHL-verifying tool to re-read all the files and compare their validity today. However, it may also be useful to determine whether the two copies were identical, back at the time of copy. `mhl-compare` can read both MHL files and point out if their hashes were the same at the time the MHL files were generated. It will also indicate any other differences in file structure, naming or modification dates, that are highly likely to occur across copying software and operating systems.
+Both you and your colleague have the capacity to run a MHL-verifying tool to re-read all the files and compare their validity *today*. However, it may also be useful to determine whether the two copies were identical, back at *the time of copy*. `mhl-compare` can read both MHL files and point out if their hashes were the same at the time the MHL files were generated. It will also indicate any other differences in file structure, naming or modification dates, that are highly likely to occur across copying software and operating systems.
 
 The benefit is that you and your colleague would be able to see if you legitimately had identical copies of the media set, at the time you made them. It may reveal that some files were missing from either set, incorrectly copied, modified by something, placed in different folders, or any other myriad of file system anomalies. These kinds of differences are hard to observe when running a singular MHL-verifying application (like [MHLTool](https://mediahashlist.org/mhl-tool/), [Sealverify](https://pomfort.com/sealverify/), [Checkpoint](https://hedge.video/checkpoint)).
+
+Additionally, MHL files are small (typically much less than 500 KB) and contain just XML, so it may be more practical to compare *them* instead when working with large media collections, where it is too time-consuming to read and verify the media files themselves, or they are stored in other physical locations.
 
 ---
 

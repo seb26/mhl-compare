@@ -9,6 +9,7 @@ from datetime import datetime
 from dateutil.tz import tzutc
 from operator import attrgetter
 import argparse
+import codecs
 
 import xmltodict
 from dateutil import parser as dateutilParser
@@ -47,6 +48,11 @@ def logDetail(*args, **kwargs):
     if LOG_VERBOSE:
         print(*args, **kwargs, end='\n')
     return
+
+def hashConvertEndian(hashString):
+    ## Converts any given BE or LE hash, as a string
+    ## And returns the opposite byte order
+    return codecs.encode(codecs.decode(hashString, 'hex')[::-1], 'hex').decode()
 
 class MHL:
     def __init__(self, listObj, filepath):
@@ -173,12 +179,26 @@ class Hash(MHL):
                 # Record all acceptable hashes
                 self.recordedHashes[ht] = hObj[ht]
 
+                if ht == 'xxhash64' and 'xxhash64be' not in self.recordedHashes:
+                    # Then the hash is LE
+                    # Convert it immediately to xxhash64be
+                    BE = hashConvertEndian( hObj[ht] )
+                    # Make the BE the identifier
+                    identifier = BE
+                    identifierType = 'xxhash64be'
+
+                    # But also add the BE to recordedHashes
+                    self.recordedHashes['xxhash64be'] = BE
+                else:
+                    identifier = hObj[ht]
+                    identifierType = ht
+
                 # But also grab an identifier at the same time
                 if identifierAlreadyFound:
                     continue
                 else:
-                    self.identifier = hObj[ht]
-                    self.identifierType = ht
+                    self.identifier = identifier
+                    self.identifierType = identifierType
                     identifierAlreadyFound = True
 
     def __str__(self):
