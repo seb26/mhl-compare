@@ -245,7 +245,7 @@ class Comparison:
         common = setA.union(setB) - deltaA - deltaB
 
         self.deltaA = [ self.A.findHash(i) for i in deltaA ]
-        self.deltaB = [ self.B.findHash(i) for i in deltaA ]
+        self.deltaB = [ self.B.findHash(i) for i in deltaB ]
         self.common = [ ( self.A.findHash(i), self.B.findHash(i) ) for i in common ]
         # Remember, self.common is a list of TUPLES because it contains objects from both lists.
 
@@ -528,15 +528,15 @@ class Comparison:
                 'desc': 'matched perfectly'
                 },
             'MINOR': {
-                'desc': 'matched, with minor differences in name, directory or modification date'
+                'desc': 'matched, but with differences in name, directory or modification date'
                 },
             'HASH_TYPE_DIFFERENT': {
                 'desc': 'had incomparable hash types and could not be compared',
                 'color': LOG_COLOR_INFORMATION
                 },
             'HASH_CHANGED': {
-                'desc': 'had different hashes, indicating the files were different between the time the MHLs were generated',
-                'desc_singular': 'had different hashes, indicating it was different between the time the MHLs were generated',
+                'desc': 'had different hashes. The files were likely different at the time the MHLs were generated',
+                'desc_singular': 'had different hashes. The file was likely different at the time the MHLs were generated',
                 'color': LOG_COLOR_WARNING
                 },
             'MISSING': {
