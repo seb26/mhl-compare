@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Includes a subfolder at the beginning -->
 <hashlist version="1.1">
     <creatorinfo>
         <name>A005</name>
@@ -9,12 +8,4 @@
         <startdate>2019-03-17T08:32:05</startdate>
         <finishdate>2019-03-17T08:32:46</finishdate>
     </creatorinfo>
-    <hash>
-        <file>EOS_DIGITAL/DCIM/100EOS5D/SEB_3046.JPG</file>
-        <size>12498349</size>
-        <creationdate>2019-03-09T10:14:14</creationdate>
-        <lastmodificationdate>2019-03-09T10:14:14</lastmodificationdate>
-        <xxhash64be>19649bc55e32b83f</xxhash64be>
-        <hashdate>2019-03-17T08:32:51</hashdate>
-    </hash>
 </hashlist>

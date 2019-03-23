@@ -1,6 +1,4 @@
 # mhl-compare
-Written in Python. Work in progress (19 March 2019).
-
 Given two [Media Hash List (MHL) files](https://mediahashlist.org/), this command line utility will compare them and show differences in hash, filenames, directory structure, size and more, of the media files described within them.
 
 Useful when comparing two copies of media files that are intended to be the same, but they originate from other sources or were copied at different times.
@@ -22,8 +20,9 @@ Additionally, MHL files are small (typically much less than 500 KB) and contain 
 
 ### Usage
 
+In a Terminal window:
 ```
-python mhl_compare.py first.mhl second.mhl
+./mhl-compare first.mhl second.mhl
 ```
 
 #### Options
@@ -35,7 +34,9 @@ python mhl_compare.py first.mhl second.mhl
 
 ### Installation
 
-Work in progress. Download the .py file and try to run it.
+* **Download version 0.2** (latest): https://github.com/seb26/mhl-compare/releases/download/v0.1/mhl-compare-v0.2.zip
+* Extract the zip
+* No installation, you just run the above command in a Terminal window.
 
 ---
 
@@ -44,14 +45,15 @@ Work in progress. Download the .py file and try to run it.
 #### With MHL files
 Can open any MHL file that is in [the standard XML format for MHL files](https://mediahashlist.org/mhl-specification/).
 
-#### With running the program itself
+#### With running the program itself (the regular download)
+Only runs on macOS. Tested only on macOS 10.14.3. It is likely to run successfully on older versions though, it's not a very complex program.
+
+#### With running the program as a Python script
 Has been tested on Python 3.7.2 on macOS 10.14.3. Written in Python 3, so in its source format, it is not compatible with Python 2 branch, and cannot be run on macOS.
 
 Has not been tested on Windows or Linux, but Python is generally pretty functional across OSs.
 
 Dependency libraries: [`xmltodict`](https://github.com/martinblech/xmltodict), [`dateutil`](https://dateutil.readthedocs.io/en/stable/), [`humanize`](https://pypi.org/project/humanize/), [`termcolor`](https://pypi.org/project/termcolor/), [`dictdiffer`](https://github.com/hughdbrown/dictdiffer).
-
-*Coming soon*: Executable file that can be downloaded and run on any macOS installation.
 
 ---
 
