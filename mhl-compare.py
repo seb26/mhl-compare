@@ -90,7 +90,7 @@ class MHL:
         if not 'hash' in listObj['hashlist']:
             # No hash entries listed
             print('There were no files found listed in this MHL file:\n    {}\nAlternatively, there was a formatting issue in the file.'.format(self.filepath))
-            quit()
+            sys.exit(0)
 
         hashTree = listObj['hashlist']['hash']
         if isinstance( hashTree, list ):
