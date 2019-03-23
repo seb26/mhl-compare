@@ -77,13 +77,32 @@ class MHL:
     def __init__(self, listObj, filepath):
         self.filepath = filepath
         self.identifier = filepath
-        self.hashlist_version = listObj['hashlist']['@version']
-        self.creatorinfo = listObj['hashlist']['creatorinfo']
-
-        # Add the hashes
         self.hashes = {}
-        HASH_DUPLICATE_SUFFIX = 1
-        for h in listObj['hashlist']['hash']:
+        HASH_DUPLICATE_SUFFIX = 1 # Current count of duplicates
+
+        self.hashlist_version = listObj['hashlist']['@version']
+
+        if 'creatorinfo' in listObj['hashlist']:
+            self.creatorinfo = listObj['hashlist']['creatorinfo']
+        else:
+            self.creatorinfo = None
+
+        if not 'hash' in listObj['hashlist']:
+            # No hash entries listed
+            print('There were no files found listed in this MHL file:\n    {}\nAlternatively, there was a formatting issue in the file.'.format(self.filepath))
+            quit()
+
+        hashTree = listObj['hashlist']['hash']
+        if isinstance( hashTree, list ):
+            # More than one hash, so it's already in a list format
+            list_of_hashes = hashTree
+        elif isinstance( hashTree, dict ):
+            # Else, it's just one hash, put it inside a list so we can iterate
+            list_of_hashes = [ hashTree ]
+        else:
+            raise Exception("Couldn't find any valid hashes. Here, I was expecting to be given a list of dicts, or a dict itself.")
+
+        for h in list_of_hashes:
             objHash = Hash(h)
             objHash.parentMHL = self.identifier
             objHashIdentifier = objHash.identifier
@@ -251,6 +270,7 @@ class Comparison:
             'HASH_TYPE_DIFFERENT', # Hash type is different, cannot be compared
             'HASH_CHANGED', # Hash is different, indicating a file change
             'MISSING', # Exists only in one list or the other
+            'DUPLICATE', # When there are multiple files listed with exactly the same hash
             'IMPOSSIBLE' # For anomalies (like hash the same but size different)
             ]
         # Create a place to store these numbers as we go along.
@@ -570,6 +590,9 @@ class Comparison:
             'IMPOSSIBLE': {
                 'desc': 'anomaly -- MHL was likely modified or something unusual happened'
                 },
+            'DUPLICATE': {
+                'desc': 'were duplicates based on them having the same hash.'
+                },
             'NO_FILES_IN_COMMON': {
                 'desc': 'There were no files in common between these two MHLs.'
                 }
@@ -614,7 +637,9 @@ class Comparison:
         return
 
 
-# Arguments
+#####
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument( "PATH_A", help="path to list A", type=str)
 parser.add_argument( "PATH_B", help="path to list B", type=str)
@@ -645,18 +670,19 @@ else:
 if args.verbose:
     LOG_VERBOSE = True
 
-f = open(file_path_A, 'r')
-PARSE_FILE_A = xmltodict.parse( f.read(), dict_constructor=dict )
-f.close()
 
-f = open(file_path_B, 'r')
-PARSE_FILE_B = xmltodict.parse( f.read(), dict_constructor=dict )
-f.close()
+#####
+
+
+fA = open(file_path_A, 'r')
+fB = open(file_path_B, 'r')
+PARSE_FILE_A = xmltodict.parse( fA.read(), dict_constructor=dict )
+PARSE_FILE_B = xmltodict.parse( fB.read(), dict_constructor=dict )
+fA.close()
+fB.close()
 
 MHL_FILE_A = MHL(PARSE_FILE_A, file_path_A)
 MHL_FILE_B = MHL(PARSE_FILE_B, file_path_B)
-
-# Startup line is now right at the top.
 
 compare = Comparison(MHL_FILE_A, MHL_FILE_B)
 compare.printInfo()
