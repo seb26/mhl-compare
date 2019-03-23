@@ -8,7 +8,6 @@ import sys
 import os
 from datetime import datetime
 from dateutil.tz import tzutc
-from operator import attrgetter
 import argparse
 import codecs
 
@@ -29,6 +28,7 @@ LOG_COLOR_MHL_A = 'green'
 LOG_COLOR_MHL_B = 'yellow'
 LOG_COLOR_WARNING = 'red'
 LOG_COLOR_INFORMATION = 'cyan'
+LOG_COLOR_BOLD = [ 'bold' ]
 
 if getattr( sys, 'frozen', False ):
     LOG_APPTYPE = 'CLI'
@@ -50,18 +50,21 @@ def showDate(dt):
         return dt.strftime(LOG_TIME_FORMAT)
 
 def showSize(bytes):
-    return humanize.naturalsize(bytes, binary=True) + " ({} bytes)".format(bytes)
+    if bytes < 1024:
+        return str(bytes) + " bytes"
+    else:
+        return humanize.naturalsize(bytes, binary=True) + " ({} bytes)".format(bytes)
 
 def logDetail(*args, **kwargs):
     if LOG_VERBOSE:
         print(*args, **kwargs, end='\n')
     return
 
-def color(text, color):
+def color(text, color, **kwargs):
     # Only print in colour if inside a terminal
     # Don't print colour codes if they go out to a file or other
     if os.isatty(1):
-        return colored(text, color)
+        return colored(text, color, **kwargs)
     else:
         return text
 
@@ -221,6 +224,10 @@ class Hash(MHL):
         # By default, print the Identifier
         return self.identifier
 
+    def __lt__(self, other):
+        # Aid in sorting by filepath
+        return self.filepath < other.filepath
+
 
 class HashNonexistent:
     def __getattr__(self, attribute):
@@ -266,6 +273,11 @@ class Comparison:
         self.common = [ ( self.A.findHash(i), self.B.findHash(i) ) for i in common ]
         # Remember, self.common is a list of TUPLES because it contains objects from both lists.
 
+        # Attempt to sort
+        self.deltaA.sort()
+        self.deltaB.sort()
+        self.common.sort()
+
         return True
 
     def checkCommon(self):
@@ -291,11 +303,11 @@ class Comparison:
                 if not beenCounted:
                     self.COUNT['MINOR'] += 1
                     beenCounted = True
-                logDetail( '  ' + color( hashA.filename, 'green' ) )
+                logDetail( '  ' + color( hashA.filename, 'green', attrs=LOG_COLOR_BOLD ) )
                 logDetail( '      Filename: different (1st):', color( hashA.filename, LOG_COLOR_MHL_A ) )
                 logDetail( '                          (2nd):', color( hashB.filename, LOG_COLOR_MHL_B ) )
             else:
-                logDetail( '  ' + hashA.filename )
+                logDetail( '  ' + color( hashA.filename, None, attrs=LOG_COLOR_BOLD ) )
             if 'directory' in dChanged:
                 if not beenCounted:
                     self.COUNT['MINOR'] += 1
@@ -417,7 +429,7 @@ class Comparison:
                 dChanged = diff.changed()
 
                 # First print a filename so everything fits underneath it.
-                logDetail( '  ' + hash.filename )
+                logDetail( '  ' + color( hash.filename, None, attrs=LOG_COLOR_BOLD ) )
 
                 # Then begin testing.
                 if hash.identifierType == hashPossible.identifierType:
@@ -513,7 +525,7 @@ class Comparison:
             if foundHashPossible == False:
                 # Begin to print the results
                 self.COUNT['MISSING'] += 1
-                logDetail('  ' + color(hash.filename, listColor))
+                logDetail('  ' + color(hash.filename, listColor, attrs=LOG_COLOR_BOLD))
                 logDetail('  This file only exists in',
                     color(listLabel + ' MHL', listColor) + '.' )
                 logDetail( '      ' + 'Path:', hash.directory )
