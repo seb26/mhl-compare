@@ -376,8 +376,7 @@ class Comparison:
 
         # Quickly clean Nonexistent objects out if they exist
         deltaClean = [ h for h in delta if not isinstance(h,HashNonexistent) ]
-        # Sort by filepath
-        deltaClean.sort(key=attrgetter('filepath'))
+        deltaClean.sort()
 
         for hash in deltaClean:
 
