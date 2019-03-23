@@ -569,6 +569,9 @@ class Comparison:
                 },
             'IMPOSSIBLE': {
                 'desc': 'anomaly -- MHL was likely modified or something unusual happened'
+                },
+            'NO_FILES_IN_COMMON': {
+                'desc': 'There were no files in common between these two MHLs.'
                 }
             }
         for label in outcomes.values():
@@ -581,6 +584,12 @@ class Comparison:
 
         print('')
         print('Observations:')
+
+        # Quick check to see if both MHLs are completely and utterly different
+        # If all counts are zero, except missing, then there really was nothing in common.
+        sumCountsGenuine = sum( self.COUNT.values() ) - self.COUNT['MISSING']
+        if not sumCountsGenuine > 0:
+            print('    ' + color('There were NO files in common between these two MHL files.', LOG_COLOR_INFORMATION) )
         for category, count in self.COUNT.items():
             line_color = outcomes[category]['color']
             if count == 0:
