@@ -1,9 +1,44 @@
 # mhl-compare
-Given two [Media Hash List (MHL) files](https://mediahashlist.org/), this command line utility will compare them and show differences in hash, filenames, directory structure, size and more, of the media files described within them.
+Given two [Media Hash List (MHL) files](https://mediahashlist.org/), this **command-line utility for macOS** will compare them and show differences in hash, filenames, directory structure, size and more, of the media files described within them.
 
 Useful when comparing two copies of media files that are intended to be the same, but they originate from other sources or were copied at different times.
 
-`mhl-compare` does not read and compare physical media files against a MHL file, it only compares MHL files to each other.
+`mhl-compare` does not read or compare physical media files against a MHL file, it only compares MHL files to each other.
+
+---
+
+### Installation
+
+* **Download version 0.2** (latest):
+  * https://github.com/seb26/mhl-compare/releases/download/v0.2/mhl-compare-v0.2.zip
+* Extract the zip
+* No installation, you just run `./mhl-compare` as a command in a Terminal window.
+
+Optional:
+* Copy it to `/usr/local/bin` so you can use it anywhere, regardless from where you are working from in the Terminal:
+```
+cp ~/Downloads/mhl-compare-v0.2/mhl-compare /usr/local/bin
+```
+
+### Usage
+
+1. In a Terminal window, `cd` to the folder where you downloaded and extracted `mhl-compare`.
+
+2. Then do:
+```
+./mhl-compare first.mhl second.mhl
+```
+
+Alternatively, you can type just:
+```
+./mhl-compare 
+```
+And from Finder, drag the MHL files one-by-one, or together, and place them on the Terminal line. This will copy their full path for you, so you don't have to type it.
+
+#### Options
+* `-v, --verbose, --info`
+  * Shows detailed, file-by-file description of the differences in each file.
+  * By default, only a brief summary counting the number of issues is shown on screen.
 
 ---
 
@@ -15,28 +50,6 @@ Both you and your colleague have the capacity to run a MHL-verifying tool to re-
 The benefit is that you and your colleague would be able to see if you legitimately had identical copies of the media set, at the time you made them. It may reveal that some files were missing from either set, incorrectly copied, modified by something, placed in different folders, or any other myriad of file system anomalies. These kinds of differences are hard to observe when running a singular MHL-verifying application (like [MHLTool](https://mediahashlist.org/mhl-tool/), [Sealverify](https://pomfort.com/sealverify/), [Checkpoint](https://hedge.video/checkpoint)).
 
 Additionally, MHL files are small (typically much less than 500 KB) and contain just XML, so it may be more practical to compare *them* instead when working with large media collections, where it is too time-consuming to read and verify the media files themselves, or they are stored in other physical locations.
-
----
-
-### Usage
-
-In a Terminal window:
-```
-./mhl-compare first.mhl second.mhl
-```
-
-#### Options
-* `-v, --verbose, --info`
-  * Shows detailed, file-by-file description of the differences in each file.
-  * By default, only a brief summary counting the number of issues is shown on screen.
-
----
-
-### Installation
-
-* **Download version 0.2** (latest): https://github.com/seb26/mhl-compare/releases/download/v0.1/mhl-compare-v0.2.zip
-* Extract the zip
-* No installation, you just run the above command in a Terminal window.
 
 ---
 
@@ -55,9 +68,14 @@ Has not been tested on Windows or Linux, but Python is generally pretty function
 
 Dependency libraries: [`xmltodict`](https://github.com/martinblech/xmltodict), [`dateutil`](https://dateutil.readthedocs.io/en/stable/), [`humanize`](https://pypi.org/project/humanize/), [`termcolor`](https://pypi.org/project/termcolor/), [`dictdiffer`](https://github.com/hughdbrown/dictdiffer).
 
----
+--- 
 
-### Development goals
+### Development
+
+#### Changelog
+Described on GitHub in Releases. See: https://github.com/seb26/mhl-compare/releases
+
+#### Goals
 
 * Test it with more real MHLs created in real scenarios, aiming to find interpretation issues and handle more exceptions
   * Make a list of available programs on the market that generate MHLs and obtain samples
