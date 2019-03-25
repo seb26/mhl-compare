@@ -171,15 +171,15 @@ class MHL:
 
 
 class Hash(MHL):
-    def __init__(self, hObj):
+    def __init__(self, xmlObject):
         self.parentMHL = False
 
-        if hObj['file']:
+        if xmlObject['file']:
             self.recordedHashes = {}
             self.duplicate = False
 
             # Path operations
-            self.filepath = hObj['file']
+            self.filepath = xmlObject['file']
             path = os.path.split( self.filepath )
             if path[0]:
                 # If inside a folder
@@ -192,35 +192,35 @@ class Hash(MHL):
             # For some reason, the <hash> entry is missing a <file> attribute
             # Probably should throw an error and let the user know their MHL is malformed
             self.filepath = False
-        self.size = int( hObj['size'] )
+        self.size = int( xmlObject['size'] )
         self.sizeHuman = showSize(self.size)
 
-        hObjKeys = hObj.keys()
+        xmlObjectKeys = xmlObject.keys()
 
         # Try do the date parsing, hopefully without errors
-        modDate = dateutilParser.parse( hObj['lastmodificationdate'] )
+        modDate = dateutilParser.parse( xmlObject['lastmodificationdate'] )
         if modDate.tzinfo is None:
             self.lastmodificationdate = modDate.replace(tzinfo=tzutc())
         else:
             self.lastmodificationdate = modDate
 
-        if 'creationdate' in hObjKeys:
-            self.creationdate = dateutilParser.parse( hObj['creationdate'] )
-        if 'hashdate' in hObjKeys:
-            self.hashdate = dateutilParser.parse( hObj['hashdate'] )
+        if 'creationdate' in xmlObjectKeys:
+            self.creationdate = dateutilParser.parse( xmlObject['creationdate'] )
+        if 'hashdate' in xmlObjectKeys:
+            self.hashdate = dateutilParser.parse( xmlObject['hashdate'] )
 
         # Now, we search for acceptable hash types
         # And because our preferred hash is first in the list, it gets assigned as the identifier
         identifierAlreadyFound = False
         for ht in HASH_TYPES_ACCEPTABLE:
-            if ht in hObjKeys:
+            if ht in xmlObjectKeys:
                 # Record all acceptable hashes
-                self.recordedHashes[ht] = hObj[ht]
+                self.recordedHashes[ht] = xmlObject[ht]
 
                 if ht == 'xxhash64' and 'xxhash64be' not in self.recordedHashes:
                     # Then the hash is LE
                     # Convert it immediately to xxhash64be
-                    BE = hashConvertEndian( hObj[ht] )
+                    BE = hashConvertEndian( xmlObject[ht] )
                     # Make the BE the identifier
                     identifier = BE
                     identifierType = 'xxhash64be'
@@ -228,7 +228,7 @@ class Hash(MHL):
                     # But also add the BE to recordedHashes
                     self.recordedHashes['xxhash64be'] = BE
                 else:
-                    identifier = hObj[ht]
+                    identifier = xmlObject[ht]
                     identifierType = ht
 
                 # But also grab an identifier at the same time
