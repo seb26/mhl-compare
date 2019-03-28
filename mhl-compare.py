@@ -6,14 +6,15 @@
 
 import sys
 import os
-from datetime import datetime
-from dateutil.tz import tzutc
 import argparse
 import codecs
+import operator
+from datetime import datetime
 
 import xmltodict
-from dateutil import parser as dateutilParser
 import humanize
+from dateutil.tz import tzutc
+from dateutil import parser as dateutilParser
 from termcolor import colored
 from lib.dictdiffer import DictDiffer
 
@@ -76,7 +77,7 @@ def hashConvertEndian(hashString):
 class MHL:
     def __init__(self, listObj, filepath):
         self.filepath = filepath
-        self.identifier = filepath
+        self.mhlIdentifier = filepath
         self.hashes = {}
         HASH_DUPLICATE_SUFFIX = 1 # Current count of duplicates
 
@@ -103,17 +104,17 @@ class MHL:
             raise Exception("Couldn't find any valid hashes. Here, I was expecting to be given a list of dicts, or a dict itself.")
 
         for h in list_of_hashes:
-            objHash = Hash(h)
-            objHash.parentMHL = self.identifier
+            objHash = Hash(h, self.mhlIdentifier)
             objHashIdentifier = objHash.identifier
 
             if objHashIdentifier in self.hashes.keys():
                 # If this is defined already, it means there's a duplicate
                 # Append some digits to its name
-                objHashIdentifier = objHashIdentifier + '_' + str(HASH_DUPLICATE_SUFFIX)
+                objHashIdentifierDupe = objHashIdentifier + '_' + str(HASH_DUPLICATE_SUFFIX)
                 HASH_DUPLICATE_SUFFIX += 1
+                objHash.identifier = objHashIdentifierDupe
                 objHash.duplicate = True
-                self.hashes[objHashIdentifier] = objHash
+                self.hashes[objHashIdentifierDupe] = objHash
             else:
                 # Store them in the dict by their identifier
                 self.hashes[objHashIdentifier] = objHash
@@ -171,8 +172,10 @@ class MHL:
 
 
 class Hash(MHL):
-    def __init__(self, xmlObject):
-        self.parentMHL = False
+    def __init__(self, xmlObject, mhlIdentifier):
+        self.parentMHL = mhlIdentifier
+
+        # Debug: print('xml',xmlObject, type(xmlObject))
 
         if xmlObject['file']:
             self.recordedHashes = {}
@@ -239,6 +242,21 @@ class Hash(MHL):
                     self.identifierType = identifierType
                     identifierAlreadyFound = True
 
+    def __eq__(self, comparison):
+        if self.identifier == comparison.identifier:
+            return True
+        else:
+            return False
+
+    def __ne__(self, comparison):
+        if self.identifier == comparison.identifier:
+            return False
+        else:
+            return True
+
+    def __hash__(self):
+        return hash( self.identifier )
+
     def __str__(self):
         # By default, print the Identifier
         return self.identifier
@@ -256,12 +274,23 @@ class HashNonexistent:
 
 
 class Comparison:
-    def __init__(self, listA, listB):
-        self.A = listA
-        self.B = listB
-        self.deltaA = set()
-        self.deltaB = set()
-        self.common = set()
+    def __init__(self, mhlA, mhlB):
+        self.A = mhlA
+        self.B = mhlB
+
+        setA = { xmlObject for xmlObject in self.A.hashes.values() }
+        setB = { xmlObject for xmlObject in self.B.hashes.values() }
+
+        deltaA = setA - setB
+        deltaB = setB - setA
+        setA_filtered = setA - deltaA
+        setB_filtered = setB - deltaB
+
+        self.deltaA = sorted(deltaA)
+        self.deltaB = sorted(deltaB)
+
+        common = zip(setA_filtered, setB_filtered)
+        self.common = sorted(common)
 
         # Define the categories of outcomes.
         count_values = [
@@ -277,28 +306,6 @@ class Comparison:
         self.COUNT = {}
         for v in count_values:
             self.COUNT[v] = 0
-
-    def createComparisonLists(self):
-        # Get the identifiers just as strings
-        setA = set( self.A.getIdentifiers() )
-        setB = set( self.B.getIdentifiers() )
-        # Then compare them and generate lists
-        # Also get a set of all the hashes in common between the two
-        deltaA = setA - setB
-        deltaB = setB - setA
-        common = setA.union(setB) - deltaA - deltaB
-
-        self.deltaA = [ self.A.findHash(i) for i in deltaA ]
-        self.deltaB = [ self.B.findHash(i) for i in deltaB ]
-        self.common = [ ( self.A.findHash(i), self.B.findHash(i) ) for i in common ]
-        # Remember, self.common is a list of TUPLES because it contains objects from both lists.
-
-        # Attempt to sort
-        self.deltaA.sort()
-        self.deltaB.sort()
-        self.common.sort()
-
-        return True
 
     def checkCommon(self):
 
@@ -686,12 +693,8 @@ MHL_FILE_B = MHL(PARSE_FILE_B, file_path_B)
 
 compare = Comparison(MHL_FILE_A, MHL_FILE_B)
 compare.printInfo()
-compare.createComparisonLists()
-# print('#################### checkCommon')
 compare.checkCommon()
-# print('#################### checkDelta A')
 compare.checkDelta(listA=True)
-# print('#################### checkDelta B')
 compare.checkDelta(listB=True)
 compare.printCount()
 print('--------------')
