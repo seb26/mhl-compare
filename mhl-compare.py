@@ -79,7 +79,7 @@ class MHL:
         self.filepath = filepath
         self.mhlIdentifier = filepath
         self.hashes = {}
-        HASH_DUPLICATE_SUFFIX = 1 # Current count of duplicates
+        self.duplicates = set()
 
         self.hashlist_version = listObj['hashlist']['@version']
 
@@ -103,21 +103,18 @@ class MHL:
         else:
             raise Exception("Couldn't find any valid hashes. Here, I was expecting to be given a list of dicts, or a dict itself.")
 
-        for h in list_of_hashes:
-            objHash = Hash(h, self.mhlIdentifier)
-            objHashIdentifier = objHash.identifier
+        HashDuplicateSuffix = 1
+        for item in list_of_hashes:
+            object = Hash(item, self.mhlIdentifier)
 
-            if objHashIdentifier in self.hashes.keys():
-                # If this is defined already, it means there's a duplicate
-                # Append some digits to its name
-                objHashIdentifierDupe = objHashIdentifier + '_' + str(HASH_DUPLICATE_SUFFIX)
-                HASH_DUPLICATE_SUFFIX += 1
-                objHash.identifier = objHashIdentifierDupe
-                objHash.duplicate = True
-                self.hashes[objHashIdentifierDupe] = objHash
-            else:
-                # Store them in the dict by their identifier
-                self.hashes[objHashIdentifier] = objHash
+            if object.identifier in self.hashes.keys():
+                # Defined already
+                self.duplicates.add(object.identifier)
+                object.isDuplicate = True
+                object.identifier = object.identifier + '_' + str(HashDuplicateSuffix)
+                HashDuplicateSuffix += 1
+
+            self.hashes[object.identifier] = object
 
     def __iter__(self):
         return iter(self.hashes)
@@ -179,7 +176,7 @@ class Hash(MHL):
 
         if xmlObject['file']:
             self.recordedHashes = {}
-            self.duplicate = False
+            self.isDuplicate = False
 
             # Path operations
             self.filepath = xmlObject['file']
@@ -462,10 +459,22 @@ class Comparison:
                     # Hash type is the same
                     if hash.identifier == hashPossible.identifier:
                         # And so are the hashes
-                        if not beenCounted:
-                            self.COUNT['PERFECT'] += 1
-                            beenCounted = True
-                        logDetail('      Hash: identical.')
+
+                        # But check if it's a duplicate first
+                        if hash.isDuplicate is True:
+                            logDetail('      This file is a duplicate. Another file exists in this MHL with the same hash.')
+                            if not beenCounted:
+                                self.COUNT['DUPLICATE'] += 1
+                                beenCounted = True
+                            logDetail(
+                                '      Hash ({}):'.format(listLabel),
+                                colored(hash.identifier + ' ({})'.format(hash.identifierType), listColor)
+                            )
+                        else:
+                            if not beenCounted:
+                                self.COUNT['PERFECT'] += 1
+                                beenCounted = True
+                            logDetail('      Hash: identical.')
                     else:
                         # But the hashes are different. File has changed?
                         if not beenCounted:
@@ -478,12 +487,14 @@ class Comparison:
                         self.COUNT['HASH_TYPE_DIFFERENT'] += 1
                         beenCounted = True
                     logDetail(color("      Hash: These hashes are of different types. It's not possible to compare them.", LOG_COLOR_INFORMATION))
-                logDetail('      Hash ({}):'.format(listLabel),
-                color('{} ({})'.format(hash.identifier, hash.identifierType), listColor)
-                )
-                logDetail('      Hash ({}):'.format(listLabelOpposite),
-                color('{} ({})'.format(hashPossible.identifier, hashPossible.identifierType), listColorOpposite)
-                )
+
+                if hash.isDuplicate is False:
+                    logDetail('      Hash ({}):'.format(listLabel),
+                        color('{} ({})'.format(hash.identifier, hash.identifierType), listColor)
+                    )
+                    logDetail('      Hash ({}):'.format(listLabelOpposite),
+                        color('{} ({})'.format(hashPossible.identifier, hashPossible.identifierType), listColorOpposite)
+                    )
 
                 if { 'filename', 'directory', 'size', 'lastmodificationdate' }.issubset(dUnchanged):
                     # If neither of these variables have changed, then we almost have a clean match.
@@ -598,7 +609,8 @@ class Comparison:
                 'desc': 'anomaly -- MHL was likely modified or something unusual happened'
                 },
             'DUPLICATE': {
-                'desc': 'were duplicates based on them having the same hash.'
+                'desc': 'were duplicates, as they had the same hash as other files',
+                'desc_singular': 'was a duplicate, as it had the same hash as another file'
                 },
             'NO_FILES_IN_COMMON': {
                 'desc': 'There were no files in common between these two MHLs.'
