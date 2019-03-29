@@ -163,10 +163,6 @@ class MHL:
             sum += h.size
         return showSize(sum)
 
-    def getIdentifiers(self):
-        all = [ v.identifier for v in self.hashes.values() ]
-        return sorted(all)
-
 
 class Hash(MHL):
     def __init__(self, xmlObject, mhlIdentifier):
