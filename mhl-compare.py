@@ -6,14 +6,14 @@
 
 import sys
 import os
-from datetime import datetime
-from dateutil.tz import tzutc
 import argparse
 import codecs
+from datetime import datetime
 
 import xmltodict
-from dateutil import parser as dateutilParser
 import humanize
+from dateutil.tz import tzutc
+from dateutil import parser as dateutilParser
 from termcolor import colored
 from lib.dictdiffer import DictDiffer
 
@@ -22,7 +22,7 @@ HASH_TYPE_PREFERRED = 'xxhash64be'
 HASH_TYPES_ACCEPTABLE = [ 'xxhash64be', 'xxhash64', 'xxhash', 'md5', 'sha1' ]
 
 LOG_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
-LOG_VERBOSE = False # By default, don't show detail about which files changed
+LOG_VERBOSE = False  # By default, don't show detail about which files changed
 
 LOG_COLOR_MHL_A = 'green'
 LOG_COLOR_MHL_B = 'yellow'
@@ -35,11 +35,14 @@ if getattr( sys, 'frozen', False ):
 else:
     LOG_APPTYPE = 'Python'
 
-LOG_VERSION = '0.2'
-LOG_STARTUP_LINE = 'mhl-compare (v{}) ({})'.format( LOG_VERSION, LOG_APPTYPE ) + ' (Author: Sebastian Reategui) (MIT License)'
+LOG_VERSION = '0.3'
+LOG_AUTHOR_AND_LICENSE = '(Author: Sebastian Reategui) (MIT License)'
+LOG_STARTUP_LINE = 'mhl-compare (v{}) ({}) {}'.format(
+    LOG_VERSION, LOG_APPTYPE, LOG_AUTHOR_AND_LICENSE)
 
 print('--------------')
 print(LOG_STARTUP_LINE)
+
 
 def showDate(dt):
     if not isinstance(dt, datetime):
@@ -49,16 +52,19 @@ def showDate(dt):
     else:
         return dt.strftime(LOG_TIME_FORMAT)
 
-def showSize(bytes):
-    if bytes < 1024:
+
+def showSize(numBytes):
+    if numBytes < 1024:
         return str(bytes) + " bytes"
     else:
-        return humanize.naturalsize(bytes, binary=True) + " ({} bytes)".format(bytes)
+        return humanize.naturalsize(numBytes, binary=True) + " ({} bytes)".format(numBytes)
+
 
 def logDetail(*args, **kwargs):
     if LOG_VERBOSE:
         print(*args, **kwargs, end='\n')
     return
+
 
 def color(text, color, **kwargs):
     # Only print in colour if inside a terminal
@@ -68,17 +74,19 @@ def color(text, color, **kwargs):
     else:
         return text
 
+
 def hashConvertEndian(hashString):
-    ## Converts any given BE or LE hash, as a string
-    ## And returns the opposite byte order
+    # Converts any given BE or LE hash, as a string
+    # And returns the opposite byte order
     return codecs.encode(codecs.decode(hashString, 'hex')[::-1], 'hex').decode()
+
 
 class MHL:
     def __init__(self, listObj, filepath):
         self.filepath = filepath
-        self.identifier = filepath
+        self.mhlIdentifier = filepath
         self.hashes = {}
-        HASH_DUPLICATE_SUFFIX = 1 # Current count of duplicates
+        self.duplicates = set()
 
         self.hashlist_version = listObj['hashlist']['@version']
 
@@ -87,7 +95,7 @@ class MHL:
         else:
             self.creatorinfo = None
 
-        if not 'hash' in listObj['hashlist']:
+        if 'hash' not in listObj['hashlist']:
             # No hash entries listed
             print('There were no files found listed in this MHL file:\n    {}\nAlternatively, there was a formatting issue in the file.'.format(self.filepath))
             sys.exit(0)
@@ -102,21 +110,18 @@ class MHL:
         else:
             raise Exception("Couldn't find any valid hashes. Here, I was expecting to be given a list of dicts, or a dict itself.")
 
-        for h in list_of_hashes:
-            objHash = Hash(h)
-            objHash.parentMHL = self.identifier
-            objHashIdentifier = objHash.identifier
+        HashDuplicateSuffix = 1
+        for item in list_of_hashes:
+            object = Hash(item, self.mhlIdentifier)
 
-            if objHashIdentifier in self.hashes.keys():
-                # If this is defined already, it means there's a duplicate
-                # Append some digits to its name
-                objHashIdentifier = objHashIdentifier + '_' + str(HASH_DUPLICATE_SUFFIX)
-                HASH_DUPLICATE_SUFFIX += 1
-                objHash.duplicate = True
-                self.hashes[objHashIdentifier] = objHash
-            else:
-                # Store them in the dict by their identifier
-                self.hashes[objHashIdentifier] = objHash
+            if object.identifier in self.hashes.keys():
+                # Defined already
+                self.duplicates.add(object.identifier)
+                object.isDuplicate = True
+                object.identifier = object.identifier + '_' + str(HashDuplicateSuffix)
+                HashDuplicateSuffix += 1
+
+            self.hashes[object.identifier] = object
 
     def __iter__(self):
         return iter(self.hashes)
@@ -165,21 +170,19 @@ class MHL:
             sum += h.size
         return showSize(sum)
 
-    def getIdentifiers(self):
-        all = [ v.identifier for v in self.hashes.values() ]
-        return sorted(all)
-
 
 class Hash(MHL):
-    def __init__(self, hObj):
-        self.parentMHL = False
+    def __init__(self, xmlObject, mhlIdentifier):
+        self.parentMHL = mhlIdentifier
 
-        if hObj['file']:
+        # Debug: print('xml',xmlObject, type(xmlObject))
+
+        if xmlObject['file']:
             self.recordedHashes = {}
-            self.duplicate = False
+            self.isDuplicate = False
 
             # Path operations
-            self.filepath = hObj['file']
+            self.filepath = xmlObject['file']
             path = os.path.split( self.filepath )
             if path[0]:
                 # If inside a folder
@@ -192,35 +195,35 @@ class Hash(MHL):
             # For some reason, the <hash> entry is missing a <file> attribute
             # Probably should throw an error and let the user know their MHL is malformed
             self.filepath = False
-        self.size = int( hObj['size'] )
+        self.size = int( xmlObject['size'] )
         self.sizeHuman = showSize(self.size)
 
-        hObjKeys = hObj.keys()
+        xmlObjectKeys = xmlObject.keys()
 
         # Try do the date parsing, hopefully without errors
-        modDate = dateutilParser.parse( hObj['lastmodificationdate'] )
+        modDate = dateutilParser.parse( xmlObject['lastmodificationdate'] )
         if modDate.tzinfo is None:
             self.lastmodificationdate = modDate.replace(tzinfo=tzutc())
         else:
             self.lastmodificationdate = modDate
 
-        if 'creationdate' in hObjKeys:
-            self.creationdate = dateutilParser.parse( hObj['creationdate'] )
-        if 'hashdate' in hObjKeys:
-            self.hashdate = dateutilParser.parse( hObj['hashdate'] )
+        if 'creationdate' in xmlObjectKeys:
+            self.creationdate = dateutilParser.parse( xmlObject['creationdate'] )
+        if 'hashdate' in xmlObjectKeys:
+            self.hashdate = dateutilParser.parse( xmlObject['hashdate'] )
 
         # Now, we search for acceptable hash types
         # And because our preferred hash is first in the list, it gets assigned as the identifier
         identifierAlreadyFound = False
         for ht in HASH_TYPES_ACCEPTABLE:
-            if ht in hObjKeys:
+            if ht in xmlObjectKeys:
                 # Record all acceptable hashes
-                self.recordedHashes[ht] = hObj[ht]
+                self.recordedHashes[ht] = xmlObject[ht]
 
                 if ht == 'xxhash64' and 'xxhash64be' not in self.recordedHashes:
                     # Then the hash is LE
                     # Convert it immediately to xxhash64be
-                    BE = hashConvertEndian( hObj[ht] )
+                    BE = hashConvertEndian( xmlObject[ht] )
                     # Make the BE the identifier
                     identifier = BE
                     identifierType = 'xxhash64be'
@@ -228,7 +231,7 @@ class Hash(MHL):
                     # But also add the BE to recordedHashes
                     self.recordedHashes['xxhash64be'] = BE
                 else:
-                    identifier = hObj[ht]
+                    identifier = xmlObject[ht]
                     identifierType = ht
 
                 # But also grab an identifier at the same time
@@ -238,6 +241,21 @@ class Hash(MHL):
                     self.identifier = identifier
                     self.identifierType = identifierType
                     identifierAlreadyFound = True
+
+    def __eq__(self, comparison):
+        if self.identifier == comparison.identifier:
+            return True
+        else:
+            return False
+
+    def __ne__(self, comparison):
+        if self.identifier == comparison.identifier:
+            return False
+        else:
+            return True
+
+    def __hash__(self):
+        return hash( self.identifier )
 
     def __str__(self):
         # By default, print the Identifier
@@ -251,54 +269,44 @@ class Hash(MHL):
 class HashNonexistent:
     def __getattr__(self, attribute):
         return None
+
     def __setattr__(self, attribute):
         return None
 
 
 class Comparison:
-    def __init__(self, listA, listB):
-        self.A = listA
-        self.B = listB
-        self.deltaA = set()
-        self.deltaB = set()
-        self.common = set()
+    def __init__(self, mhlA, mhlB):
+        self.A = mhlA
+        self.B = mhlB
+
+        setA = { xmlObject for xmlObject in self.A.hashes.values() }
+        setB = { xmlObject for xmlObject in self.B.hashes.values() }
+
+        deltaA = setA - setB
+        deltaB = setB - setA
+        setA_filtered = setA - deltaA
+        setB_filtered = setB - deltaB
+
+        self.deltaA = sorted(deltaA)
+        self.deltaB = sorted(deltaB)
+
+        common = zip(setA_filtered, setB_filtered)
+        self.common = sorted(common)
 
         # Define the categories of outcomes.
         count_values = [
-            'PERFECT', # Match hash and all filesystem attributes
-            'MINOR', # Match hash but one or more filesystem attributes are different
-            'HASH_TYPE_DIFFERENT', # Hash type is different, cannot be compared
-            'HASH_CHANGED', # Hash is different, indicating a file change
-            'MISSING', # Exists only in one list or the other
-            'DUPLICATE', # When there are multiple files listed with exactly the same hash
-            'IMPOSSIBLE' # For anomalies (like hash the same but size different)
+            'PERFECT',  # Match hash and all filesystem attributes
+            'MINOR',  # Match hash but one or more filesystem attributes are different
+            'HASH_TYPE_DIFFERENT',  # Hash type is different, cannot be compared
+            'HASH_CHANGED',  # Hash is different, indicating a file change
+            'MISSING',  # Exists only in one list or the other
+            'DUPLICATE',  # When there are multiple files listed with exactly the same hash
+            'IMPOSSIBLE'  # For anomalies (like hash the same but size different)
             ]
         # Create a place to store these numbers as we go along.
         self.COUNT = {}
         for v in count_values:
             self.COUNT[v] = 0
-
-    def createComparisonLists(self):
-        # Get the identifiers just as strings
-        setA = set( self.A.getIdentifiers() )
-        setB = set( self.B.getIdentifiers() )
-        # Then compare them and generate lists
-        # Also get a set of all the hashes in common between the two
-        deltaA = setA - setB
-        deltaB = setB - setA
-        common = setA.union(setB) - deltaA - deltaB
-
-        self.deltaA = [ self.A.findHash(i) for i in deltaA ]
-        self.deltaB = [ self.B.findHash(i) for i in deltaB ]
-        self.common = [ ( self.A.findHash(i), self.B.findHash(i) ) for i in common ]
-        # Remember, self.common is a list of TUPLES because it contains objects from both lists.
-
-        # Attempt to sort
-        self.deltaA.sort()
-        self.deltaB.sort()
-        self.common.sort()
-
-        return True
 
     def checkCommon(self):
 
@@ -357,21 +365,31 @@ class Comparison:
                 if not beenCounted:
                     self.COUNT['MINOR'] += 1
                     beenCounted = True
-                logDetail( '      Modified date: different (1st):', color( hashA.lastmodificationdate, LOG_COLOR_MHL_A ) )
-                logDetail( '                               (2nd):', color( hashB.lastmodificationdate, LOG_COLOR_MHL_B ) )
+                logDetail(
+                    '      Modified date: different (1st):',
+                    color( hashA.lastmodificationdate, LOG_COLOR_MHL_A )
+                 )
+                logDetail(
+                    '                               (2nd):',
+                    color( hashB.lastmodificationdate, LOG_COLOR_MHL_B )
+                )
 
             # Briefly explain to the user what attributes were added/removed
             if len(dAdded) > 0:
                 dAddedList = ', '.join( str(i) for i in dAdded )
-                logDetail( '      These attributes exist in 1st only:',
-                    color(dAddedList, LOG_COLOR_MHL_A ) )
+                logDetail(
+                    '      These attributes exist in 1st only:',
+                    color(dAddedList, LOG_COLOR_MHL_A )
+                )
             if len(dRemoved) > 0:
                 dRemovedList = ', '.join( str(i) for i in dRemoved )
-                logDetail( '      These attributes exist in 2nd only:',
-                color(dRemovedList, LOG_COLOR_MHL_B ) )
+                logDetail(
+                    '      These attributes exist in 2nd only:',
+                    color(dRemovedList, LOG_COLOR_MHL_B )
+                )
 
-    def checkDelta(self, listA=False, listB=False):
-        if listA is True:
+    def checkDelta(self, letter):
+        if letter == 'A':
             delta = self.deltaA
             # Refer to the opposite MHL to access and perform searches on it
             oppositeMHL = self.B
@@ -381,7 +399,7 @@ class Comparison:
             listLabelOpposite = '2nd'
             listColor = LOG_COLOR_MHL_A
             listColorOpposite = LOG_COLOR_MHL_B
-        elif listB is True:
+        elif letter == 'B':
             delta = self.deltaB
             oppositeMHL = self.A
 
@@ -395,7 +413,7 @@ class Comparison:
             return
 
         # Quickly clean Nonexistent objects out if they exist
-        deltaClean = [ h for h in delta if not isinstance(h,HashNonexistent) ]
+        deltaClean = [ h for h in delta if not isinstance(h, HashNonexistent) ]
         deltaClean.sort()
 
         for hash in deltaClean:
@@ -405,12 +423,12 @@ class Comparison:
             # print('rh', hash.recordedHashes)
 
             foundHashPossible = None
-            beenCounted = False # If this hash has been counted yet
+            beenCounted = False  # If this hash has been counted yet
 
             # Look for a match by other hash
             for otherHashType, otherHashValue in hash.recordedHashes.items():
                 if otherHashType == hash.identifierType:
-                    pass # to next hash in the list
+                    pass  # to next hash in the list
 
                 hashPossible = oppositeMHL.findByOtherHash( otherHashType, otherHashValue )
                 if isinstance(hashPossible, HashNonexistent):
@@ -428,7 +446,7 @@ class Comparison:
                     foundHashPossible = True
                     break
 
-            if foundHashPossible == False:
+            if foundHashPossible is False:
                 # Searched but no matches by other hash.
                 # Look for a match by filename
                 hashPossible = oppositeMHL.findHashByAttribute( 'filename', hash.filename )
@@ -439,7 +457,7 @@ class Comparison:
                 else:
                     foundHashPossible = True
 
-            if foundHashPossible == True:
+            if foundHashPossible is True:
                 # Compare the hash and the possible hash.
                 diff = DictDiffer(hash.__dict__, hashPossible.__dict__)
                 dAdded = diff.added()
@@ -455,10 +473,22 @@ class Comparison:
                     # Hash type is the same
                     if hash.identifier == hashPossible.identifier:
                         # And so are the hashes
-                        if not beenCounted:
-                            self.COUNT['PERFECT'] += 1
-                            beenCounted = True
-                        logDetail('      Hash: identical.')
+
+                        # But check if it's a duplicate first
+                        if hash.isDuplicate is True:
+                            logDetail('      This file is a duplicate. Another file exists in this MHL with the same hash.')
+                            if not beenCounted:
+                                self.COUNT['DUPLICATE'] += 1
+                                beenCounted = True
+                            logDetail(
+                                '      Hash ({}):'.format(listLabel),
+                                colored(hash.identifier + ' ({})'.format(hash.identifierType), listColor)
+                            )
+                        else:
+                            if not beenCounted:
+                                self.COUNT['PERFECT'] += 1
+                                beenCounted = True
+                            logDetail('      Hash: identical.')
                     else:
                         # But the hashes are different. File has changed?
                         if not beenCounted:
@@ -471,12 +501,21 @@ class Comparison:
                         self.COUNT['HASH_TYPE_DIFFERENT'] += 1
                         beenCounted = True
                     logDetail(color("      Hash: These hashes are of different types. It's not possible to compare them.", LOG_COLOR_INFORMATION))
-                logDetail('      Hash ({}):'.format(listLabel),
-                color('{} ({})'.format(hash.identifier, hash.identifierType), listColor)
-                )
-                logDetail('      Hash ({}):'.format(listLabelOpposite),
-                color('{} ({})'.format(hashPossible.identifier, hashPossible.identifierType), listColorOpposite)
-                )
+
+                if hash.isDuplicate is False:
+                    logDetail(
+                        '      Hash ({}):'.format(listLabel),
+                        color(
+                            '{} ({})'.format(hash.identifier, hash.identifierType), listColor
+                        )
+                    )
+                    logDetail(
+                        '      Hash ({}):'.format(listLabelOpposite),
+                        color(
+                            '{} ({})'.format(hashPossible.identifier, hashPossible.identifierType),
+                            listColorOpposite
+                        )
+                    )
 
                 if { 'filename', 'directory', 'size', 'lastmodificationdate' }.issubset(dUnchanged):
                     # If neither of these variables have changed, then we almost have a clean match.
@@ -506,7 +545,6 @@ class Comparison:
                     else:
                         logDetail( '      Path: identical:', hash.directory )
 
-
                     if 'size' in dChanged:
                         # It is an anomaly if the size has changed, but not the hash.
                         # Report it as impossible, but also print it to the user anyway.
@@ -532,21 +570,27 @@ class Comparison:
                     # Briefly explain to the user what attributes were added/removed
                     if len(dAdded) > 0:
                         dAddedList = ', '.join( str(i) for i in dAdded )
-                        logDetail( '      These attributes exist in 1st only:',
-                            color(dAddedList, LOG_COLOR_MHL_A ) )
+                        logDetail(
+                            '      These attributes exist in 1st only:',
+                            color(dAddedList, LOG_COLOR_MHL_A )
+                        )
                     if len(dRemoved) > 0:
                         dRemovedList = ', '.join( str(i) for i in dRemoved )
-                        logDetail( '      These attributes exist in 2nd only:',
-                        color(dRemovedList, LOG_COLOR_MHL_B ) )
+                        logDetail(
+                            '      These attributes exist in 2nd only:',
+                            color(dRemovedList, LOG_COLOR_MHL_B )
+                        )
 
                     pass
 
-            if foundHashPossible == False:
+            if foundHashPossible is False:
                 # Begin to print the results
                 self.COUNT['MISSING'] += 1
                 logDetail('  ' + color(hash.filename, listColor, attrs=LOG_COLOR_BOLD))
-                logDetail('  This file only exists in',
-                    color(listLabel + ' MHL', listColor) + '.' )
+                logDetail(
+                    '  This file only exists in',
+                    color(listLabel + ' MHL', listColor) + '.'
+                )
                 logDetail( '      ' + 'Path:', hash.directory )
                 logDetail( '      ' + 'Size:', hash.sizeHuman )
                 logDetail( '      ' + 'Hash:', hash.identifier, '({})'.format(hash.identifierType ) )
@@ -591,7 +635,8 @@ class Comparison:
                 'desc': 'anomaly -- MHL was likely modified or something unusual happened'
                 },
             'DUPLICATE': {
-                'desc': 'were duplicates based on them having the same hash.'
+                'desc': 'were duplicates, as they had the same hash as other files',
+                'desc_singular': 'was a duplicate, as it had the same hash as another file'
                 },
             'NO_FILES_IN_COMMON': {
                 'desc': 'There were no files in common between these two MHLs.'
@@ -599,10 +644,10 @@ class Comparison:
             }
         for label in outcomes.values():
             # If a singular description ('was' vs. 'were') is not defined, just use the regular description.
-            if not 'desc_singular' in label.keys():
+            if 'desc_singular' not in label.keys():
                 label['desc_singular'] = label['desc']
             # If a color is not defined, don't use any.
-            if not 'color' in label.keys():
+            if 'color' not in label.keys():
                 label['color'] = None
 
         print('')
@@ -643,8 +688,11 @@ class Comparison:
 parser = argparse.ArgumentParser()
 parser.add_argument( "PATH_A", help="path to list A", type=str)
 parser.add_argument( "PATH_B", help="path to list B", type=str)
-parser.add_argument( "-v", "--verbose", "--info",
-    help="gives greater detail on all files affected", action="store_true")
+parser.add_argument(
+    "-v", "--verbose", "--info",
+    help="gives greater detail on all files affected",
+    action="store_true"
+)
 args = parser.parse_args()
 
 
@@ -656,14 +704,14 @@ else:
 foundA = os.path.isfile(args.PATH_A)
 foundB = os.path.isfile(args.PATH_B)
 
-if foundA == True and foundB == True:
+if foundA is True and foundB is True:
     file_path_A = args.PATH_A
     file_path_B = args.PATH_B
 else:
     not_found_string = ''
-    if foundA == False:
+    if foundA is False:
         not_found_string += "    " + args.PATH_A + "\n"
-    if foundB == False:
+    if foundB is False:
         not_found_string += "    " + args.PATH_B + "\n"
     raise FileNotFoundError('Could not find these MHL file(s). Check the path for typos?\n' + not_found_string)
 
@@ -686,12 +734,8 @@ MHL_FILE_B = MHL(PARSE_FILE_B, file_path_B)
 
 compare = Comparison(MHL_FILE_A, MHL_FILE_B)
 compare.printInfo()
-compare.createComparisonLists()
-# print('#################### checkCommon')
 compare.checkCommon()
-# print('#################### checkDelta A')
-compare.checkDelta(listA=True)
-# print('#################### checkDelta B')
-compare.checkDelta(listB=True)
+compare.checkDelta('A')
+compare.checkDelta('B')
 compare.printCount()
 print('--------------')
