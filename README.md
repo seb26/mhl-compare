@@ -9,29 +9,22 @@ Useful when comparing two copies of media files that are intended to be the same
 
 ### Installation
 
-* **Download version 0.2** (latest):
-  * https://github.com/seb26/mhl-compare/releases/download/v0.2/mhl-compare-v0.2.zip
+* **Download version 0.3** (latest):
+  * https://github.com/seb26/mhl-compare/releases/download/v0.3/mhl-compare-v0.3.zip
 * Extract the zip
-* No installation, you just run `./mhl-compare` as a command in a Terminal window.
-
-Optional:
-* Copy it to `/usr/local/bin` so you can use it anywhere, regardless from where you are working from in the Terminal:
-```
-cp ~/Downloads/mhl-compare-v0.2/mhl-compare /usr/local/bin
-```
+* Click on `install.command`
 
 ### Usage
 
-1. In a Terminal window, `cd` to the folder where you downloaded and extracted `mhl-compare`.
+1. In a Terminal window, run:
 
-2. Then do:
 ```
-./mhl-compare first.mhl second.mhl
+mhl-compare first.mhl second.mhl
 ```
 
 Alternatively, you can type just:
 ```
-./mhl-compare 
+mhl-compare
 ```
 And from Finder, drag the MHL files one-by-one, or together, and place them on the Terminal line. This will copy their full path for you, so you don't have to type it.
 
@@ -68,7 +61,7 @@ Has not been tested on Windows or Linux, but Python is generally pretty function
 
 Dependency libraries: [`xmltodict`](https://github.com/martinblech/xmltodict), [`dateutil`](https://dateutil.readthedocs.io/en/stable/), [`humanize`](https://pypi.org/project/humanize/), [`termcolor`](https://pypi.org/project/termcolor/), [`dictdiffer`](https://github.com/hughdbrown/dictdiffer).
 
---- 
+---
 
 ### Development
 

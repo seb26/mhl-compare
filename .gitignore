@@ -155,3 +155,6 @@ dmypy.json
 # Some binary files I don't want to share
 *.jpg
 *.pdf
+
+# My temporary build zip files
+.tmp/
