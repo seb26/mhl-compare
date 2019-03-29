@@ -12,12 +12,13 @@ Useful when comparing two copies of media files that are intended to be the same
 * **Download version 0.3** (latest):
   * https://github.com/seb26/mhl-compare/releases/download/v0.3/mhl-compare-v0.3.zip
 * Extract the zip
-* Right-click on `install.command` > 'Open'. Don't *double-click*.
+* In Finder, right-click on `install.command` > 'Open'. Don't *double-click*.
 * Observe the warning about unidenitifed developer, and choose 'Open' anyway
 
 #### Note
-* If you *double-click* on `install.command`, it will give the warning: "can't be opened because it is from an unidentified developer".
-* You must right-click and choose 'Open' instead.
+* If you *double-click* on `install.command` in Finder, it will give the warning: "can't be opened because it is from an unidentified developer".
+* Instead, you must right-click on it in Finder and choose 'Open' from the context menu.
+* Then, you are presented with the same dialog warning but now with an 'Open' button. 
 * Alternatively, open a Terminal window and run `./install.command`.
 
 The unidentified developer status is being looked at in [issue #7](https://github.com/seb26/mhl-compare/issues/7).
