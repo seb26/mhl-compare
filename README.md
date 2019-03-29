@@ -12,7 +12,19 @@ Useful when comparing two copies of media files that are intended to be the same
 * **Download version 0.3** (latest):
   * https://github.com/seb26/mhl-compare/releases/download/v0.3/mhl-compare-v0.3.zip
 * Extract the zip
-* Click on `install.command`
+* Right-click on `install.command` > 'Open'. Don't *double-click*.
+* Observe the warning about unidenitifed developer, and choose 'Open' anyway
+
+#### Note
+* If you *double-click* on `install.command`, it will give the warning: "can't be opened because it is from an unidentified developer".
+* You must right-click and choose 'Open' instead.
+* Alternatively, open a Terminal window and run `./install.command`.
+
+The unidentified developer status is being looked at in [issue #7](https://github.com/seb26/mhl-compare/issues/7).
+
+**What does install.command do anyway?**
+
+It only copies the `bin/mhl-compare` program into `/usr/local/bin/` which is the standard location on macOS for a user's command-line programs. Then, you can run mhl-compare from anywhere in a Terminal.
 
 ### Usage
 
