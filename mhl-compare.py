@@ -35,7 +35,7 @@ if getattr( sys, 'frozen', False ):
 else:
     LOG_APPTYPE = 'Python'
 
-LOG_VERSION = '0.3d'
+LOG_VERSION = '0.3'
 LOG_AUTHOR_AND_LICENSE = '(Author: Sebastian Reategui) (MIT License)'
 LOG_STARTUP_LINE = 'mhl-compare (v{}) ({}) {}'.format(
     LOG_VERSION, LOG_APPTYPE, LOG_AUTHOR_AND_LICENSE)
