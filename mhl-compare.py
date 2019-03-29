@@ -55,7 +55,7 @@ def showDate(dt):
 
 def showSize(numBytes):
     if numBytes < 1024:
-        return str(bytes) + " bytes"
+        return str(numBytes) + " bytes"
     else:
         return humanize.naturalsize(numBytes, binary=True) + " ({} bytes)".format(numBytes)
 
