@@ -218,7 +218,7 @@ class Hash(MHL):
         for ht in HASH_TYPES_ACCEPTABLE:
             if ht in xmlObjectKeys:
                 # Record all acceptable hashes
-                self.recordedHashes[ht] = xmlObject[ht]
+                self.recordedHashes[ht] = xmlObject[ht].lower()
 
                 if ht == 'xxhash64' and 'xxhash64be' not in self.recordedHashes:
                     # Then the hash is LE
@@ -231,7 +231,7 @@ class Hash(MHL):
                     # But also add the BE to recordedHashes
                     self.recordedHashes['xxhash64be'] = BE
                 else:
-                    identifier = xmlObject[ht]
+                    identifier = xmlObject[ht].lower()
                     identifierType = ht
 
                 # But also grab an identifier at the same time
