@@ -23,6 +23,7 @@ HASH_TYPE_PREFERRED = 'xxhash64be'
 HASH_TYPES_ACCEPTABLE = [ 'xxhash64be', 'xxhash64', 'xxhash', 'md5', 'sha1' ]
 
 LOG_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
+LOG_SIZE_FORMAT = 'decimal' # By default, 1000 bytes is 1 KB
 LOG_VERBOSE = False  # By default, don't show detail about which files changed
 
 LOG_COLOR_MHL_A = 'green'
@@ -58,7 +59,11 @@ def showSize(numBytes):
     if numBytes < 1024:
         return str(numBytes) + " bytes"
     else:
-        return humanize.naturalsize(numBytes, binary=True) + " ({} bytes)".format(numBytes)
+        if LOG_SIZE_FORMAT == 'binary':
+            humanize_binary_setting = True
+        else:
+            humanize_binary_setting = False
+        return humanize.naturalsize(numBytes, binary=humanize_binary_setting) + " ({} bytes)".format(numBytes)
 
 
 def logDetail(*args, **kwargs):
@@ -712,6 +717,11 @@ parser.add_argument(
     help="gives greater detail on all files affected",
     action="store_true"
 )
+parser.add_argument(
+    "-b", "--binary",
+    help="Shows sizes in binary format, appropriate for Windows (1024 bytes = 1 KiB)",
+    action="store_true"
+)
 args = parser.parse_args()
 
 
@@ -736,6 +746,9 @@ else:
 
 if args.verbose:
     LOG_VERBOSE = True
+
+if args.binary:
+    LOG_SIZE_FORMAT = 'binary'
 
 
 #####
