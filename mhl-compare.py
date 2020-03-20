@@ -8,6 +8,7 @@ import sys
 import os
 import argparse
 import codecs
+import re
 from datetime import datetime
 
 import xmltodict
@@ -35,8 +36,8 @@ if getattr( sys, 'frozen', False ):
 else:
     LOG_APPTYPE = 'Python'
 
-LOG_VERSION = '0.3'
-LOG_AUTHOR_AND_LICENSE = '(Author: Sebastian Reategui) (MIT License)'
+LOG_VERSION = '0.4'
+LOG_AUTHOR_AND_LICENSE = '(Author: Sebastian Reategui) (MIT License) (2020-03-21)'
 LOG_STARTUP_LINE = 'mhl-compare (v{}) ({}) {}'.format(
     LOG_VERSION, LOG_APPTYPE, LOG_AUTHOR_AND_LICENSE)
 
@@ -88,7 +89,8 @@ class MHL:
         self.hashes = {}
         self.duplicates = set()
 
-        self.hashlist_version = listObj['hashlist']['@version']
+        if '@version' in listObj['hashlist']:
+            self.hashlist_version = listObj['hashlist']['@version']
 
         if 'creatorinfo' in listObj['hashlist']:
             self.creatorinfo = listObj['hashlist']['creatorinfo']
@@ -167,7 +169,8 @@ class MHL:
     def totalSize(self):
         sum = 0
         for h in self.hashes.values():
-            sum += h.size
+            if h.sizeDefined:
+                sum += h.size
         return showSize(sum)
 
 
@@ -195,17 +198,28 @@ class Hash(MHL):
             # For some reason, the <hash> entry is missing a <file> attribute
             # Probably should throw an error and let the user know their MHL is malformed
             self.filepath = False
-        self.size = int( xmlObject['size'] )
-        self.sizeHuman = showSize(self.size)
+
 
         xmlObjectKeys = xmlObject.keys()
 
-        # Try do the date parsing, hopefully without errors
-        modDate = dateutilParser.parse( xmlObject['lastmodificationdate'] )
-        if modDate.tzinfo is None:
-            self.lastmodificationdate = modDate.replace(tzinfo=tzutc())
-        else:
-            self.lastmodificationdate = modDate
+        if 'size' in xmlObjectKeys:
+            if xmlObject['size']:
+                self.sizeDefined = True
+                self.size = int( xmlObject['size'] )
+                self.sizeHuman = showSize(self.size)
+            else:
+                # It's "None", unspecified
+                self.sizeDefined = False
+                self.size = None
+                self.sizeHuman = 'Not specified'
+
+        if 'lastmodificationdate' in xmlObjectKeys:
+            # Try do the date parsing, hopefully without errors
+            modDate = dateutilParser.parse( xmlObject['lastmodificationdate'] )
+            if modDate.tzinfo is None:
+                self.lastmodificationdate = modDate.replace(tzinfo=tzutc())
+            else:
+                self.lastmodificationdate = modDate
 
         if 'creationdate' in xmlObjectKeys:
             self.creationdate = dateutilParser.parse( xmlObject['creationdate'] )
@@ -351,6 +365,11 @@ class Comparison:
             logDetail( '      Hash: identical: {} ({})'.format( hashA.identifier, hashA.identifierType ) )
 
             if 'size' in dChanged:
+                # First, check if the Size is simply "Not specified"
+                if hashA.sizeDefined == False or hashB.sizeDefined == False:
+                    self.COUNT['MINOR'] += 1
+                    beenCounted = True
+
                 # It is an anomaly if the size has changed, but not the hash.
                 # Report it as impossible, but also print it to the user anyway.
                 if not beenCounted:
@@ -616,7 +635,7 @@ class Comparison:
                 'desc': 'matched perfectly'
                 },
             'MINOR': {
-                'desc': 'matched, but with differences in name, directory or modification date'
+                'desc': 'matched (but with differences in name, directory or modification date)'
                 },
             'HASH_TYPE_DIFFERENT': {
                 'desc': 'had incomparable hash types and could not be compared',
@@ -721,13 +740,47 @@ if args.verbose:
 
 #####
 
+PATTERN_XXHASHLIST = re.compile('^([0-9a-fA-F]{16})\s{2}(.*)$')
 
-fA = open(file_path_A, 'r')
-fB = open(file_path_B, 'r')
-PARSE_FILE_A = xmltodict.parse( fA.read(), dict_constructor=dict )
-PARSE_FILE_B = xmltodict.parse( fB.read(), dict_constructor=dict )
-fA.close()
-fB.close()
+def parseFile(filepath):
+
+    # (1) Try to parse it as XML
+    try:
+        with open(filepath, 'r') as f:
+            parsed = xmltodict.parse( f.read(), dict_constructor=dict )
+            return parsed
+
+    except:
+        # Syntax error from xmldict
+        # (2) Try parsing this as an .xxhash simple list of sums
+        with open(filepath, 'r') as f:
+            lines = f.readlines()
+            f.close()
+
+            fauxMHL = {
+                '_ORIGIN': os.path.basename(filepath),
+                'hashlist': {
+                    'hash': []
+                }
+            }
+            for line in lines:
+                match = PATTERN_XXHASHLIST.match(line)
+                if match:
+                    hash = match[1]
+                    hashFilepath = match[2]
+
+                    # Create a faux MHL line, imitating XML already parsed as a dict
+                    fauxMHL_hash = {
+                        'file': hashFilepath,
+                        'size': None,
+                        'xxhash64be': hash,
+                    }
+                    fauxMHL['hashlist']['hash'].append(fauxMHL_hash)
+
+            return fauxMHL
+
+PARSE_FILE_A = parseFile(file_path_A)
+PARSE_FILE_B = parseFile(file_path_B)
 
 MHL_FILE_A = MHL(PARSE_FILE_A, file_path_A)
 MHL_FILE_B = MHL(PARSE_FILE_B, file_path_B)
