@@ -516,9 +516,10 @@ class Comparison:
             beenCounted = False  # If this hash has been counted yet
 
             # Look for a match by other hash
+            # E.g., if XXHASH and MD5 present, search by MD5
             for otherHashType, otherHashValue in hash.recordedHashes.items():
                 if otherHashType == hash.identifierType:
-                    pass  # to next hash in the list
+                    pass  # Skip the hash type we are already using
 
                 hashPossible = oppositeMHL.findByOtherHash( otherHashType, otherHashValue )
                 if isinstance(hashPossible, HashNonexistent):
@@ -608,7 +609,7 @@ class Comparison:
                     )
 
                 if { 'filename', 'directory', 'size' }.issubset(dUnchanged):
-                    # If neither of these variables have changed, then we almost have a perfect match.
+                    # If neither of these variables have changed, then we have a perfect match.
                     # EVEN THOUGH we used a slightly different preferred hash.
                     if not beenCounted:
                         self.COUNT['PERFECT'] += 1
@@ -638,7 +639,9 @@ class Comparison:
                     if 'size' in dChanged:
                         # First, check if the Size is simply "Not specified"
                         # This is not an anomaly if so.
-                        if hashA.sizeDefined == False or hashB.sizeDefined == False:
+                        if hash.sizeDefined == False:
+                            # If we have come this far (hash match, name, directory) but size can't be compared
+                            # That is as good as we are gonna get.
                             self.COUNT['PERFECT'] += 1
                             beenCounted = True
                         else:
@@ -690,8 +693,8 @@ class Comparison:
 
                     pass
 
-            if foundHashPossible is False:
-                # Begin to print the results
+            else:
+                # Else if foundHashPossible was False.
                 self.COUNT['MISSING'] += 1
                 logDetail('  ' + color(hash.filename, listColor, attrs=LOG_COLOR_BOLD))
                 logDetail(
