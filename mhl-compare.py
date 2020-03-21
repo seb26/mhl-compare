@@ -9,6 +9,7 @@ import os
 import argparse
 import codecs
 import re
+import itertools
 from datetime import datetime
 
 import xmltodict
@@ -26,7 +27,7 @@ LOG_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 LOG_SIZE_FORMAT = 'decimal' # By default, 1000 bytes is 1 KB
 LOG_VERBOSE = False  # By default, don't show detail about which files changed
 LOG_SHOW_DATES = False # By default, don't report on modification dates, hashdates, or creationdates
-DATE_ATTRIBS_TO_FILTER = [ 'lastmodificationdate', 'creationdate', 'hashdate' ]
+LIST_OF_DATE_ATTRIBUTES = [ 'lastmodificationdate', 'creationdate', 'hashdate' ]
 
 LOG_COLOR_MHL_A = 'green'
 LOG_COLOR_MHL_B = 'yellow'
@@ -57,7 +58,7 @@ def showDate(dt):
         return dt.strftime(LOG_TIME_FORMAT)
 
 
-def showSize(numBytes):
+def humanSize(numBytes, showBytes=False):
     if numBytes < 1024:
         return str(numBytes) + " bytes"
     else:
@@ -65,7 +66,18 @@ def showSize(numBytes):
             humanize_binary_setting = True
         else:
             humanize_binary_setting = False
-        return humanize.naturalsize(numBytes, binary=humanize_binary_setting) + " ({} bytes)".format(numBytes)
+
+        display_human_size = humanize.naturalsize(
+            numBytes,
+            binary=humanize_binary_setting,
+            format="%.2f" # 2 decimal places
+        )
+
+        # If yes, display (1024 bytes) in brackets next to the human amount.
+        if showBytes:
+            return display_human_size + ' ({} bytes)'.format(str(numBytes))
+        else:
+            return display_human_size
 
 
 def logDetail(*args, **kwargs):
@@ -215,7 +227,11 @@ class MHL:
         for h in self.hashes.values():
             if h.sizeDefined:
                 sum += h.size
-        return showSize(sum)
+        if self.originType == 'HASHLIST_PLAIN':
+            # Then there is no record of sizes
+            return None
+        else:
+            return sum
 
 
 class Hash(MHL):
@@ -250,7 +266,7 @@ class Hash(MHL):
             if xmlObject['size']:
                 self.sizeDefined = True
                 self.size = int( xmlObject['size'] )
-                self.sizeHuman = showSize(self.size)
+                self.sizeHuman = humanSize(self.size)
             else:
                 # It's "None", unspecified
                 self.sizeDefined = False
@@ -443,8 +459,8 @@ class Comparison:
 
             # Briefly explain to the user what attributes were added/removed
             if LOG_SHOW_DATES == False:
-                dAddedFiltered = [ i for i in dAdded if i not in DATE_ATTRIBS_TO_FILTER ]
-                dRemovedFiltered = [ i for i in dRemoved if i not in DATE_ATTRIBS_TO_FILTER ]
+                dAddedFiltered = [ i for i in dAdded if i not in LIST_OF_DATE_ATTRIBUTES ]
+                dRemovedFiltered = [ i for i in dRemoved if i not in LIST_OF_DATE_ATTRIBUTES ]
             else:
                 dAddedFiltered = dAdded
                 dRemovedFiltered = dRemoved
@@ -653,8 +669,8 @@ class Comparison:
 
                     # Briefly explain to the user what attributes were added/removed
                     if LOG_SHOW_DATES == False:
-                        dAddedFiltered = [ i for i in dAdded if i not in DATE_ATTRIBS_TO_FILTER ]
-                        dRemovedFiltered = [ i for i in dRemoved if i not in DATE_ATTRIBS_TO_FILTER ]
+                        dAddedFiltered = [ i for i in dAdded if i not in LIST_OF_DATE_ATTRIBUTES ]
+                        dRemovedFiltered = [ i for i in dRemoved if i not in LIST_OF_DATE_ATTRIBUTES ]
                     else:
                         dAddedFiltered = dAdded
                         dRemovedFiltered = dRemoved
@@ -695,11 +711,11 @@ class Comparison:
         if self.A.originType == 'HASHLIST_PLAIN':
             displayed_size_A = 'Size not specified (file is a simple list of checksums)'
         else:
-            displayed_size_A = self.A.totalSize()
+            displayed_size_A = humanSize(self.A.totalSize(), showBytes=True)
         if self.B.originType == 'HASHLIST_PLAIN':
             displayed_size_B = 'Size not specified (file is a simple list of checksums)'
         else:
-            displayed_size_B = self.B.totalSize()
+            displayed_size_B = humanSize(self.B.totalSize(), showBytes=True)
 
         print('')
         if LOG_VERBOSE:
@@ -788,8 +804,7 @@ class Comparison:
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument( "PATH_A", help="path to list A", type=str)
-parser.add_argument( "PATH_B", help="path to list B", type=str)
+parser.add_argument( "FILEPATH", nargs='+', help="Path to the first file")
 parser.add_argument(
     "-v", "--verbose", "--info",
     help="gives greater detail on all files affected",
@@ -808,25 +823,6 @@ parser.add_argument(
 args = parser.parse_args()
 
 
-if args.PATH_A and args.PATH_B:
-    pass
-else:
-    raise Exception('Two files need to be included when you run the command')
-
-foundA = os.path.isfile(args.PATH_A)
-foundB = os.path.isfile(args.PATH_B)
-
-if foundA is True and foundB is True:
-    file_path_A = args.PATH_A
-    file_path_B = args.PATH_B
-else:
-    not_found_string = ''
-    if foundA is False:
-        not_found_string += "    " + args.PATH_A + "\n"
-    if foundB is False:
-        not_found_string += "    " + args.PATH_B + "\n"
-    raise FileNotFoundError('Could not find these MHL file(s). Check the path for typos?\n' + not_found_string)
-
 if args.verbose:
     LOG_VERBOSE = True
 if args.binary:
@@ -835,15 +831,71 @@ if args.dates:
     LOG_SHOW_DATES = True
 
 
+if len(args.FILEPATH) == 1:
+    # Print a summary of just this file
+    filepath = args.FILEPATH[0]
+    if not os.path.isfile(filepath):
+        raise FileNotFoundError('\n\nCould not find this MHL file. Check the path for typos?\n{}'.format(filepath))
+
+    MHL = MHL(filepath)
+
+    def keyfunc(x):
+        return x.directory
+
+    MHL_items = sorted(MHL.hashes.values())
+    for dir, items in itertools.groupby(MHL_items, keyfunc):
+        print(color(dir, 'green', attrs=LOG_COLOR_BOLD) + ':')
+        for item in items:
+            print_filename = '  > ' + item.filename
+            print_log_detail_to_add = '\t{} {}'.format(
+                color('({})'.format(item.identifier), 'yellow'),
+                item.sizeHuman
+            )
+            if LOG_VERBOSE == True:
+                print(print_filename + print_log_detail_to_add)
+            else:
+                print(print_filename)
+
+            # Show date information, if user requests
+            if LOG_SHOW_DATES:
+                for attrib in LIST_OF_DATE_ATTRIBUTES:
+                    if hasattr(item, attrib):
+                        logDetail( '        {:<20}:'.format(attrib), getattr(item, attrib))
+        # After each directory, line break
+        print()
+    print('--------------')
+    # Summarise the MHL
+    print('{} files, {} in total'.format(
+        MHL.count(),
+        humanSize( MHL.totalSize(), showBytes=True )
+        )
+    )
+
+
+elif len(args.FILEPATH) == 2:
+    # Our main comparison will take place with 2 files.
+    # Check the paths exist first.
+    for filepath in args.FILEPATH:
+        if not os.path.isfile(filepath):
+            raise FileNotFoundError('\n\nCould not find this MHL file. Check the path for typos?\n{}'.format(filepath))
+    # Then define our A and B files.
+    filepath_A = args.FILEPATH[0]
+    filepath_B = args.FILEPATH[1]
+
+    MHL_FILE_A = MHL(filepath_A)
+    MHL_FILE_B = MHL(filepath_B)
+
+    compare = Comparison(MHL_FILE_A, MHL_FILE_B)
+    compare.printInfo()
+    compare.checkCommon()
+    compare.checkDelta('A')
+    compare.checkDelta('B')
+    compare.printCount()
+
+else:
+    raise Exception('\n\nYou have specified {} files. Only two at a time are supported for comparison.\nDouble check you have not included any erroneous spaces in the file path.'.format(len(args.FILEPATH)))
+
+
 #####
 
-MHL_FILE_A = MHL(file_path_A)
-MHL_FILE_B = MHL(file_path_B)
-
-compare = Comparison(MHL_FILE_A, MHL_FILE_B)
-compare.printInfo()
-compare.checkCommon()
-compare.checkDelta('A')
-compare.checkDelta('B')
-compare.printCount()
 print('--------------')
