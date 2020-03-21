@@ -26,6 +26,7 @@ LOG_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 LOG_SIZE_FORMAT = 'decimal' # By default, 1000 bytes is 1 KB
 LOG_VERBOSE = False  # By default, don't show detail about which files changed
 LOG_SHOW_DATES = False # By default, don't report on modification dates, hashdates, or creationdates
+DATE_ATTRIBS_TO_FILTER = [ 'lastmodificationdate', 'creationdate', 'hashdate' ]
 
 LOG_COLOR_MHL_A = 'green'
 LOG_COLOR_MHL_B = 'yellow'
@@ -376,8 +377,8 @@ class Comparison:
             dChanged = diff.changed()
             dUnchanged = diff.unchanged()
 
-            if { 'filename', 'directory', 'size', 'lastmodificationdate' }.issubset(dUnchanged):
-                # If neither of these variables have changed, then we have a clean match.
+            if { 'filename', 'directory', 'size' }.issubset(dUnchanged):
+                # If neither of these variables have changed, then we have a perfect match.
                 # Report it and move on.
                 if not beenCounted:
                     self.COUNT['PERFECT'] += 1
@@ -410,7 +411,7 @@ class Comparison:
             if 'size' in dChanged:
                 # First, check if the Size is simply "Not specified"
                 if hashA.sizeDefined == False or hashB.sizeDefined == False:
-                    self.COUNT['MINOR'] += 1
+                    self.COUNT['PERFECT'] += 1
                     beenCounted = True
 
                 # It is an anomaly if the size has changed, but not the hash.
@@ -424,30 +425,41 @@ class Comparison:
                 logDetail( '      ' + 'Size: identical: ' + hashA.sizeHuman )
 
             if 'lastmodificationdate' in dChanged:
-                if not beenCounted:
-                    self.COUNT['MINOR'] += 1
-                    beenCounted = True
-                logDetail(
-                    '      Modified date: different (1st):',
-                    color( hashA.lastmodificationdate, LOG_COLOR_MHL_A )
-                 )
-                logDetail(
-                    '                               (2nd):',
-                    color( hashB.lastmodificationdate, LOG_COLOR_MHL_B )
-                )
+                if LOG_SHOW_DATES:
+                    if not beenCounted:
+                        self.COUNT['MINOR'] += 1
+                        beenCounted = True
+                    logDetail(
+                        '      Modified date: different (1st):',
+                        color( hashA.lastmodificationdate, LOG_COLOR_MHL_A )
+                     )
+                    logDetail(
+                        '                               (2nd):',
+                        color( hashB.lastmodificationdate, LOG_COLOR_MHL_B )
+                    )
+                else:
+                    # Don't count date changes unless user wants it (LOG_SHOW_DATES is true)
+                    pass
 
             # Briefly explain to the user what attributes were added/removed
-            if len(dAdded) > 0:
-                dAddedList = ', '.join( str(i) for i in dAdded )
+            if LOG_SHOW_DATES == False:
+                dAddedFiltered = [ i for i in dAdded if i not in DATE_ATTRIBS_TO_FILTER ]
+                dRemovedFiltered = [ i for i in dRemoved if i not in DATE_ATTRIBS_TO_FILTER ]
+            else:
+                dAddedFiltered = dAdded
+                dRemovedFiltered = dRemoved
+
+            if len(dAddedFiltered) > 0:
+                dAddedString = ', '.join( str(i) for i in dAddedFiltered )
                 logDetail(
                     '      These attributes exist in 1st only:',
-                    color(dAddedList, LOG_COLOR_MHL_A )
+                    color(dAddedString, LOG_COLOR_MHL_A )
                 )
-            if len(dRemoved) > 0:
-                dRemovedList = ', '.join( str(i) for i in dRemoved )
+            if len(dRemovedFiltered) > 0:
+                dRemovedString = ', '.join( str(i) for i in dRemovedFiltered )
                 logDetail(
                     '      These attributes exist in 2nd only:',
-                    color(dRemovedList, LOG_COLOR_MHL_B )
+                    color(dRemovedString, LOG_COLOR_MHL_B )
                 )
 
     def checkDelta(self, letter):
@@ -579,8 +591,8 @@ class Comparison:
                         )
                     )
 
-                if { 'filename', 'directory', 'size', 'lastmodificationdate' }.issubset(dUnchanged):
-                    # If neither of these variables have changed, then we almost have a clean match.
+                if { 'filename', 'directory', 'size' }.issubset(dUnchanged):
+                    # If neither of these variables have changed, then we almost have a perfect match.
                     # EVEN THOUGH we used a slightly different preferred hash.
                     if not beenCounted:
                         self.COUNT['PERFECT'] += 1
@@ -608,39 +620,56 @@ class Comparison:
                         logDetail( '      Path: identical:', hash.directory )
 
                     if 'size' in dChanged:
-                        # It is an anomaly if the size has changed, but not the hash.
-                        # Report it as impossible, but also print it to the user anyway.
-                        if not beenCounted:
-                            self.COUNT['IMPOSSIBLE'] += 1
+                        # First, check if the Size is simply "Not specified"
+                        # This is not an anomaly if so.
+                        if hashA.sizeDefined == False or hashB.sizeDefined == False:
+                            self.COUNT['PERFECT'] += 1
                             beenCounted = True
-                        logDetail( '      Size: different (1st):', color( hash.sizeHuman, LOG_COLOR_MHL_A ) )
-                        logDetail( '                      (2nd):', color( hashPossible.sizeHuman, LOG_COLOR_MHL_B ) )
+                        else:
+                            # It is an anomaly if the size has changed while the hash has not.
+                            # Report it as impossible, but also print it to the user anyway.
+                            if not beenCounted:
+                                self.COUNT['IMPOSSIBLE'] += 1
+                                beenCounted = True
+                            logDetail( '      Size: different (1st):', color( hash.sizeHuman, LOG_COLOR_MHL_A ) )
+                            logDetail( '                      (2nd):', color( hashPossible.sizeHuman, LOG_COLOR_MHL_B ) )
                     else:
                         logDetail( '      ' + 'Size: identical: ' + hashPossible.sizeHuman )
 
                     if 'lastmodificationdate' in dChanged:
-                        if not beenCounted:
-                            self.COUNT['MINOR'] += 1
-                            beenCounted = True
+                        if LOG_SHOW_DATES:
+                            if not beenCounted:
+                                self.COUNT['MINOR'] += 1
+                                beenCounted = True
 
-                        hModDate = showDate(hash.lastmodificationdate)
-                        hPModDate = showDate(hashPossible.lastmodificationdate)
+                            hModDate = showDate(hash.lastmodificationdate)
+                            hPModDate = showDate(hashPossible.lastmodificationdate)
 
-                        logDetail( '      Modified date: different (1st):', color( hModDate, LOG_COLOR_MHL_A ) )
-                        logDetail( '                               (2nd):', color( hPModDate, LOG_COLOR_MHL_B ) )
+                            logDetail( '      Modified date: different (1st):', color( hModDate, LOG_COLOR_MHL_A ) )
+                            logDetail( '                               (2nd):', color( hPModDate, LOG_COLOR_MHL_B ) )
+                        else:
+                            # Don't count date changes unless user wants it (LOG_SHOW_DATES is true)
+                            pass
 
                     # Briefly explain to the user what attributes were added/removed
-                    if len(dAdded) > 0:
-                        dAddedList = ', '.join( str(i) for i in dAdded )
+                    if LOG_SHOW_DATES == False:
+                        dAddedFiltered = [ i for i in dAdded if i not in DATE_ATTRIBS_TO_FILTER ]
+                        dRemovedFiltered = [ i for i in dRemoved if i not in DATE_ATTRIBS_TO_FILTER ]
+                    else:
+                        dAddedFiltered = dAdded
+                        dRemovedFiltered = dRemoved
+
+                    if len(dAddedFiltered) > 0:
+                        dAddedString = ', '.join( str(i) for i in dAddedFiltered )
                         logDetail(
                             '      These attributes exist in 1st only:',
-                            color(dAddedList, LOG_COLOR_MHL_A )
+                            color(dAddedString, LOG_COLOR_MHL_A )
                         )
-                    if len(dRemoved) > 0:
-                        dRemovedList = ', '.join( str(i) for i in dRemoved )
+                    if len(dRemovedFiltered) > 0:
+                        dRemovedString = ', '.join( str(i) for i in dRemovedFiltered )
                         logDetail(
                             '      These attributes exist in 2nd only:',
-                            color(dRemovedList, LOG_COLOR_MHL_B )
+                            color(dRemovedString, LOG_COLOR_MHL_B )
                         )
 
                     pass
@@ -689,7 +718,7 @@ class Comparison:
                 'desc': 'matched perfectly'
                 },
             'MINOR': {
-                'desc': 'matched (but with differences in name, directory or modification date)'
+                'desc': 'matched (but with differences in name or directory)'
                 },
             'HASH_TYPE_DIFFERENT': {
                 'desc': 'had incomparable hash types and could not be compared',
@@ -771,6 +800,11 @@ parser.add_argument(
     help="Shows sizes in binary format, appropriate for Windows (1024 bytes = 1 KiB)",
     action="store_true"
 )
+parser.add_argument(
+    "-d", "--dates",
+    help="Report on differences in modification date, creation date or hash date",
+    action="store_true"
+)
 args = parser.parse_args()
 
 
@@ -795,9 +829,10 @@ else:
 
 if args.verbose:
     LOG_VERBOSE = True
-
 if args.binary:
     LOG_SIZE_FORMAT = 'binary'
+if args.dates:
+    LOG_SHOW_DATES = True
 
 
 #####
