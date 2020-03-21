@@ -16,7 +16,7 @@ import humanize
 from dateutil.tz import tzutc
 from dateutil import parser as dateutilParser
 from termcolor import colored
-from lib.dictdiffer import DictDiffer
+from dictdiffer import DictDiffer
 
 # Program defaults
 HASH_TYPE_PREFERRED = 'xxhash64be'
