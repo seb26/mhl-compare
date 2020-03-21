@@ -25,6 +25,7 @@ HASH_TYPES_ACCEPTABLE = [ 'xxhash64be', 'xxhash64', 'xxhash', 'md5', 'sha1' ]
 LOG_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 LOG_SIZE_FORMAT = 'decimal' # By default, 1000 bytes is 1 KB
 LOG_VERBOSE = False  # By default, don't show detail about which files changed
+LOG_SHOW_DATES = False # By default, don't report on modification dates, hashdates, or creationdates
 
 LOG_COLOR_MHL_A = 'green'
 LOG_COLOR_MHL_B = 'yellow'
@@ -87,12 +88,49 @@ def hashConvertEndian(hashString):
     return codecs.encode(codecs.decode(hashString, 'hex')[::-1], 'hex').decode()
 
 
+
 class MHL:
-    def __init__(self, listObj, filepath):
+    def __init__(self, filepath):
         self.filepath = filepath
         self.mhlIdentifier = filepath
         self.hashes = {}
         self.duplicates = set()
+
+        PATTERN_XXHASHLIST = re.compile('^([0-9a-fA-F]{16})\s{2}(.*)$')
+
+        # (1) Try to parse it as XML
+        try:
+            with open(self.filepath, 'r') as f:
+                listObj = xmltodict.parse( f.read(), dict_constructor=dict )
+                self.originType = 'MHL'
+        except:
+            # Syntax error from xmldict
+            # (2) Try parsing this as an .xxhash simple list of sums
+            with open(filepath, 'r') as f:
+                lines = f.readlines()
+                f.close()
+
+                fauxMHL = {
+                    '_ORIGIN': os.path.basename(filepath),
+                    'hashlist': {
+                        'hash': []
+                    }
+                }
+                for line in lines:
+                    match = PATTERN_XXHASHLIST.match(line)
+                    if match:
+                        hash = match[1]
+                        hashFilepath = match[2]
+
+                        # Create a faux MHL line, imitating XML already parsed as a dict
+                        fauxMHL_hash = {
+                            'file': hashFilepath,
+                            'size': None,
+                            'xxhash64be': hash,
+                        }
+                        fauxMHL['hashlist']['hash'].append(fauxMHL_hash)
+                listObj = fauxMHL
+                self.originType = 'HASHLIST_PLAIN'
 
         if '@version' in listObj['hashlist']:
             self.hashlist_version = listObj['hashlist']['@version']
@@ -623,15 +661,26 @@ class Comparison:
         count_files_A = str( self.A.count() ) + " files"
         count_files_B = str( self.B.count() ) + " files"
 
+
+
+        if self.A.originType == 'HASHLIST_PLAIN':
+            displayed_size_A = 'Size not specified (file is a simple list of checksums)'
+        else:
+            displayed_size_A = self.A.totalSize()
+        if self.B.originType == 'HASHLIST_PLAIN':
+            displayed_size_B = 'Size not specified (file is a simple list of checksums)'
+        else:
+            displayed_size_B = self.B.totalSize()
+
         print('')
         if LOG_VERBOSE:
             print('Summary:')
         print('1st MHL file:', color(self.A.filepath, LOG_COLOR_MHL_A) )
         print('             ', color(count_files_A, LOG_COLOR_MHL_A) )
-        print('             ', color(self.A.totalSize(), LOG_COLOR_MHL_A) )
+        print('             ', color(displayed_size_A, LOG_COLOR_MHL_A) )
         print('2nd MHL file:', color(self.B.filepath, LOG_COLOR_MHL_B) )
         print('             ', color(count_files_B, LOG_COLOR_MHL_B) )
-        print('             ', color(self.B.totalSize(), LOG_COLOR_MHL_B) )
+        print('             ', color(displayed_size_B, LOG_COLOR_MHL_B) )
         return
 
     def printCount(self):
@@ -753,50 +802,8 @@ if args.binary:
 
 #####
 
-PATTERN_XXHASHLIST = re.compile('^([0-9a-fA-F]{16})\s{2}(.*)$')
-
-def parseFile(filepath):
-
-    # (1) Try to parse it as XML
-    try:
-        with open(filepath, 'r') as f:
-            parsed = xmltodict.parse( f.read(), dict_constructor=dict )
-            return parsed
-
-    except:
-        # Syntax error from xmldict
-        # (2) Try parsing this as an .xxhash simple list of sums
-        with open(filepath, 'r') as f:
-            lines = f.readlines()
-            f.close()
-
-            fauxMHL = {
-                '_ORIGIN': os.path.basename(filepath),
-                'hashlist': {
-                    'hash': []
-                }
-            }
-            for line in lines:
-                match = PATTERN_XXHASHLIST.match(line)
-                if match:
-                    hash = match[1]
-                    hashFilepath = match[2]
-
-                    # Create a faux MHL line, imitating XML already parsed as a dict
-                    fauxMHL_hash = {
-                        'file': hashFilepath,
-                        'size': None,
-                        'xxhash64be': hash,
-                    }
-                    fauxMHL['hashlist']['hash'].append(fauxMHL_hash)
-
-            return fauxMHL
-
-PARSE_FILE_A = parseFile(file_path_A)
-PARSE_FILE_B = parseFile(file_path_B)
-
-MHL_FILE_A = MHL(PARSE_FILE_A, file_path_A)
-MHL_FILE_B = MHL(PARSE_FILE_B, file_path_B)
+MHL_FILE_A = MHL(file_path_A)
+MHL_FILE_B = MHL(file_path_B)
 
 compare = Comparison(MHL_FILE_A, MHL_FILE_B)
 compare.printInfo()
