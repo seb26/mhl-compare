@@ -8,6 +8,8 @@ import sys
 import os
 import argparse
 import codecs
+import re
+import itertools
 from datetime import datetime
 
 import xmltodict
@@ -15,14 +17,17 @@ import humanize
 from dateutil.tz import tzutc
 from dateutil import parser as dateutilParser
 from termcolor import colored
-from lib.dictdiffer import DictDiffer
+from dictdiffer import DictDiffer
 
 # Program defaults
 HASH_TYPE_PREFERRED = 'xxhash64be'
 HASH_TYPES_ACCEPTABLE = [ 'xxhash64be', 'xxhash64', 'xxhash', 'md5', 'sha1' ]
 
 LOG_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
+LOG_SIZE_FORMAT = 'decimal' # By default, 1000 bytes is 1 KB
 LOG_VERBOSE = False  # By default, don't show detail about which files changed
+LOG_SHOW_DATES = False # By default, don't report on modification dates, hashdates, or creationdates
+LIST_OF_DATE_ATTRIBUTES = [ 'lastmodificationdate', 'creationdate', 'hashdate' ]
 
 LOG_COLOR_MHL_A = 'green'
 LOG_COLOR_MHL_B = 'yellow'
@@ -35,8 +40,8 @@ if getattr( sys, 'frozen', False ):
 else:
     LOG_APPTYPE = 'Python'
 
-LOG_VERSION = '0.3'
-LOG_AUTHOR_AND_LICENSE = '(Author: Sebastian Reategui) (MIT License)'
+LOG_VERSION = '0.4'
+LOG_AUTHOR_AND_LICENSE = '(Author: Sebastian Reategui) (MIT License) (2020-03-21)'
 LOG_STARTUP_LINE = 'mhl-compare (v{}) ({}) {}'.format(
     LOG_VERSION, LOG_APPTYPE, LOG_AUTHOR_AND_LICENSE)
 
@@ -53,11 +58,30 @@ def showDate(dt):
         return dt.strftime(LOG_TIME_FORMAT)
 
 
-def showSize(numBytes):
+def humanSize(numBytes, showBytes=False):
+    if not numBytes:
+        # If for some reason you can't do maths on this 'None'
+        # Avoid it
+        return None
     if numBytes < 1024:
         return str(numBytes) + " bytes"
     else:
-        return humanize.naturalsize(numBytes, binary=True) + " ({} bytes)".format(numBytes)
+        if LOG_SIZE_FORMAT == 'binary':
+            humanize_binary_setting = True
+        else:
+            humanize_binary_setting = False
+
+        display_human_size = humanize.naturalsize(
+            numBytes,
+            binary=humanize_binary_setting,
+            format="%.2f" # 2 decimal places
+        )
+
+        # If yes, display (1024 bytes) in brackets next to the human amount.
+        if showBytes:
+            return display_human_size + ' ({} bytes)'.format(str(numBytes))
+        else:
+            return display_human_size
 
 
 def logDetail(*args, **kwargs):
@@ -81,14 +105,75 @@ def hashConvertEndian(hashString):
     return codecs.encode(codecs.decode(hashString, 'hex')[::-1], 'hex').decode()
 
 
+
 class MHL:
-    def __init__(self, listObj, filepath):
+    def __init__(self, filepath):
         self.filepath = filepath
         self.mhlIdentifier = filepath
         self.hashes = {}
         self.duplicates = set()
 
-        self.hashlist_version = listObj['hashlist']['@version']
+        PATTERNS_HASHLIST_SIMPLE = [
+            '^([0-9a-fA-F]{16})\s{2}(.*)$',
+            '^([0-9a-fA-F]{16})\s\?XXHASH64\*(.*)$',
+            '^([0-9a-fA-F]{16})\s\*(.*)$',
+            '^([0-9a-fA-F]{32})\s\*(.*)$'
+        ]
+
+        # (1) Try to parse it as XML
+        try:
+            with open(self.filepath, 'r') as f:
+                listObj = xmltodict.parse( f.read(), dict_constructor=dict )
+                self.originType = 'MHL'
+        except:
+            # (2) Try parsing this as an .xxhash simple hashlist
+            #     This is a basic single-line per file list, with hash at the
+            #     beginning, 2 or so spaces, then filename.
+            #     Typically no other data attributes, such as found in an MHL.
+            with open(filepath, 'r') as f:
+                lines = f.readlines()
+                # We will create a "faux MHL" with XML structure.
+                # The rest of Class MHL() will then navigate this XML just like
+                # it would our regular .mhl files.
+                fauxMHL = {
+                    '_ORIGIN': os.path.basename(filepath),
+                    'hashlist': {
+                        'hash': []
+                    }
+                }
+                for line in lines:
+                    # Now test each line against our identified patterns above.
+                    match = False
+                    for pattern in PATTERNS_HASHLIST_SIMPLE:
+                        match = re.compile(pattern).match(line)
+                        if match:
+                            # Found a match, work with it
+                            break
+                        else:
+                            # Keep going until we match
+                            continue
+                    if match:
+                        hash = match[1]
+                        hashFilepath = match[2]
+                        fauxMHL_hash = {
+                            'file': hashFilepath,
+                            'size': None,
+                            'xxhash64be': hash,
+                        }
+                        fauxMHL['hashlist']['hash'].append(fauxMHL_hash)
+                    else:
+                        # This line doesn't match, keep moving on.
+                        continue
+                if len(fauxMHL['hashlist']['hash']) == 0:
+                    # If no lines matched, then no hashes were added.
+                    # Tell the user we couldn't get anything useful from file.
+                    raise Exception("\n\n    Unrecognised file: not an MHL nor a simple list of checksums." + "\n    " + filepath)
+                # Now introduce the imposter XML.
+                listObj = fauxMHL
+                self.originType = 'HASHLIST_PLAIN'
+
+        if '@version' in listObj['hashlist']:
+            self.hashlist_version = listObj['hashlist']['@version']
 
         if 'creatorinfo' in listObj['hashlist']:
             self.creatorinfo = listObj['hashlist']['creatorinfo']
@@ -167,8 +252,13 @@ class MHL:
     def totalSize(self):
         sum = 0
         for h in self.hashes.values():
-            sum += h.size
-        return showSize(sum)
+            if h.sizeDefined:
+                sum += h.size
+        if self.originType == 'HASHLIST_PLAIN':
+            # Then there is no record of sizes
+            return None
+        else:
+            return sum
 
 
 class Hash(MHL):
@@ -195,17 +285,28 @@ class Hash(MHL):
             # For some reason, the <hash> entry is missing a <file> attribute
             # Probably should throw an error and let the user know their MHL is malformed
             self.filepath = False
-        self.size = int( xmlObject['size'] )
-        self.sizeHuman = showSize(self.size)
+
 
         xmlObjectKeys = xmlObject.keys()
 
-        # Try do the date parsing, hopefully without errors
-        modDate = dateutilParser.parse( xmlObject['lastmodificationdate'] )
-        if modDate.tzinfo is None:
-            self.lastmodificationdate = modDate.replace(tzinfo=tzutc())
-        else:
-            self.lastmodificationdate = modDate
+        if 'size' in xmlObjectKeys:
+            if xmlObject['size']:
+                self.sizeDefined = True
+                self.size = int( xmlObject['size'] )
+                self.sizeHuman = humanSize(self.size)
+            else:
+                # It's "None", unspecified
+                self.sizeDefined = False
+                self.size = None
+                self.sizeHuman = 'Not specified'
+
+        if 'lastmodificationdate' in xmlObjectKeys:
+            # Try do the date parsing, hopefully without errors
+            modDate = dateutilParser.parse( xmlObject['lastmodificationdate'] )
+            if modDate.tzinfo is None:
+                self.lastmodificationdate = modDate.replace(tzinfo=tzutc())
+            else:
+                self.lastmodificationdate = modDate
 
         if 'creationdate' in xmlObjectKeys:
             self.creationdate = dateutilParser.parse( xmlObject['creationdate'] )
@@ -319,8 +420,8 @@ class Comparison:
             dChanged = diff.changed()
             dUnchanged = diff.unchanged()
 
-            if { 'filename', 'directory', 'size', 'lastmodificationdate' }.issubset(dUnchanged):
-                # If neither of these variables have changed, then we have a clean match.
+            if { 'filename', 'directory', 'size' }.issubset(dUnchanged):
+                # If neither of these variables have changed, then we have a perfect match.
                 # Report it and move on.
                 if not beenCounted:
                     self.COUNT['PERFECT'] += 1
@@ -351,6 +452,11 @@ class Comparison:
             logDetail( '      Hash: identical: {} ({})'.format( hashA.identifier, hashA.identifierType ) )
 
             if 'size' in dChanged:
+                # First, check if the Size is simply "Not specified"
+                if hashA.sizeDefined == False or hashB.sizeDefined == False:
+                    self.COUNT['PERFECT'] += 1
+                    beenCounted = True
+
                 # It is an anomaly if the size has changed, but not the hash.
                 # Report it as impossible, but also print it to the user anyway.
                 if not beenCounted:
@@ -362,30 +468,41 @@ class Comparison:
                 logDetail( '      ' + 'Size: identical: ' + hashA.sizeHuman )
 
             if 'lastmodificationdate' in dChanged:
-                if not beenCounted:
-                    self.COUNT['MINOR'] += 1
-                    beenCounted = True
-                logDetail(
-                    '      Modified date: different (1st):',
-                    color( hashA.lastmodificationdate, LOG_COLOR_MHL_A )
-                 )
-                logDetail(
-                    '                               (2nd):',
-                    color( hashB.lastmodificationdate, LOG_COLOR_MHL_B )
-                )
+                if LOG_SHOW_DATES:
+                    if not beenCounted:
+                        self.COUNT['MINOR'] += 1
+                        beenCounted = True
+                    logDetail(
+                        '      Modified date: different (1st):',
+                        color( hashA.lastmodificationdate, LOG_COLOR_MHL_A )
+                     )
+                    logDetail(
+                        '                               (2nd):',
+                        color( hashB.lastmodificationdate, LOG_COLOR_MHL_B )
+                    )
+                else:
+                    # Don't count date changes unless user wants it (LOG_SHOW_DATES is true)
+                    pass
 
             # Briefly explain to the user what attributes were added/removed
-            if len(dAdded) > 0:
-                dAddedList = ', '.join( str(i) for i in dAdded )
+            if LOG_SHOW_DATES == False:
+                dAddedFiltered = [ i for i in dAdded if i not in LIST_OF_DATE_ATTRIBUTES ]
+                dRemovedFiltered = [ i for i in dRemoved if i not in LIST_OF_DATE_ATTRIBUTES ]
+            else:
+                dAddedFiltered = dAdded
+                dRemovedFiltered = dRemoved
+
+            if len(dAddedFiltered) > 0:
+                dAddedString = ', '.join( str(i) for i in dAddedFiltered )
                 logDetail(
                     '      These attributes exist in 1st only:',
-                    color(dAddedList, LOG_COLOR_MHL_A )
+                    color(dAddedString, LOG_COLOR_MHL_A )
                 )
-            if len(dRemoved) > 0:
-                dRemovedList = ', '.join( str(i) for i in dRemoved )
+            if len(dRemovedFiltered) > 0:
+                dRemovedString = ', '.join( str(i) for i in dRemovedFiltered )
                 logDetail(
                     '      These attributes exist in 2nd only:',
-                    color(dRemovedList, LOG_COLOR_MHL_B )
+                    color(dRemovedString, LOG_COLOR_MHL_B )
                 )
 
     def checkDelta(self, letter):
@@ -426,9 +543,10 @@ class Comparison:
             beenCounted = False  # If this hash has been counted yet
 
             # Look for a match by other hash
+            # E.g., if XXHASH and MD5 present, search by MD5
             for otherHashType, otherHashValue in hash.recordedHashes.items():
                 if otherHashType == hash.identifierType:
-                    pass  # to next hash in the list
+                    pass  # Skip the hash type we are already using
 
                 hashPossible = oppositeMHL.findByOtherHash( otherHashType, otherHashValue )
                 if isinstance(hashPossible, HashNonexistent):
@@ -517,8 +635,8 @@ class Comparison:
                         )
                     )
 
-                if { 'filename', 'directory', 'size', 'lastmodificationdate' }.issubset(dUnchanged):
-                    # If neither of these variables have changed, then we almost have a clean match.
+                if { 'filename', 'directory', 'size' }.issubset(dUnchanged):
+                    # If neither of these variables have changed, then we have a perfect match.
                     # EVEN THOUGH we used a slightly different preferred hash.
                     if not beenCounted:
                         self.COUNT['PERFECT'] += 1
@@ -546,45 +664,64 @@ class Comparison:
                         logDetail( '      Path: identical:', hash.directory )
 
                     if 'size' in dChanged:
-                        # It is an anomaly if the size has changed, but not the hash.
-                        # Report it as impossible, but also print it to the user anyway.
-                        if not beenCounted:
-                            self.COUNT['IMPOSSIBLE'] += 1
+                        # First, check if the Size is simply "Not specified"
+                        # This is not an anomaly if so.
+                        if hash.sizeDefined == False:
+                            # If we have come this far (hash match, name, directory) but size can't be compared
+                            # That is as good as we are gonna get.
+                            self.COUNT['PERFECT'] += 1
                             beenCounted = True
-                        logDetail( '      Size: different (1st):', color( hash.sizeHuman, LOG_COLOR_MHL_A ) )
-                        logDetail( '                      (2nd):', color( hashPossible.sizeHuman, LOG_COLOR_MHL_B ) )
+                        else:
+                            # It is an anomaly if the size has changed while the hash has not.
+                            # Report it as impossible, but also print it to the user anyway.
+                            if not beenCounted:
+                                self.COUNT['IMPOSSIBLE'] += 1
+                                beenCounted = True
+                            logDetail( '      Size: different (1st):', color( hash.sizeHuman, LOG_COLOR_MHL_A ) )
+                            logDetail( '                      (2nd):', color( hashPossible.sizeHuman, LOG_COLOR_MHL_B ) )
                     else:
                         logDetail( '      ' + 'Size: identical: ' + hashPossible.sizeHuman )
 
                     if 'lastmodificationdate' in dChanged:
-                        if not beenCounted:
-                            self.COUNT['MINOR'] += 1
-                            beenCounted = True
+                        if LOG_SHOW_DATES:
+                            if not beenCounted:
+                                self.COUNT['MINOR'] += 1
+                                beenCounted = True
 
-                        hModDate = showDate(hash.lastmodificationdate)
-                        hPModDate = showDate(hashPossible.lastmodificationdate)
+                            hModDate = showDate(hash.lastmodificationdate)
+                            hPModDate = showDate(hashPossible.lastmodificationdate)
 
-                        logDetail( '      Modified date: different (1st):', color( hModDate, LOG_COLOR_MHL_A ) )
-                        logDetail( '                               (2nd):', color( hPModDate, LOG_COLOR_MHL_B ) )
+                            logDetail( '      Modified date: different (1st):', color( hModDate, LOG_COLOR_MHL_A ) )
+                            logDetail( '                               (2nd):', color( hPModDate, LOG_COLOR_MHL_B ) )
+                        else:
+                            # Don't count date changes unless user wants it (LOG_SHOW_DATES is true)
+                            pass
 
                     # Briefly explain to the user what attributes were added/removed
-                    if len(dAdded) > 0:
-                        dAddedList = ', '.join( str(i) for i in dAdded )
+                    if LOG_SHOW_DATES == False:
+                        dAddedFiltered = [ i for i in dAdded if i not in LIST_OF_DATE_ATTRIBUTES ]
+                        dRemovedFiltered = [ i for i in dRemoved if i not in LIST_OF_DATE_ATTRIBUTES ]
+                    else:
+                        dAddedFiltered = dAdded
+                        dRemovedFiltered = dRemoved
+
+                    if len(dAddedFiltered) > 0:
+                        dAddedString = ', '.join( str(i) for i in dAddedFiltered )
                         logDetail(
                             '      These attributes exist in 1st only:',
-                            color(dAddedList, LOG_COLOR_MHL_A )
+                            color(dAddedString, LOG_COLOR_MHL_A )
                         )
-                    if len(dRemoved) > 0:
-                        dRemovedList = ', '.join( str(i) for i in dRemoved )
+                    if len(dRemovedFiltered) > 0:
+                        dRemovedString = ', '.join( str(i) for i in dRemovedFiltered )
                         logDetail(
                             '      These attributes exist in 2nd only:',
-                            color(dRemovedList, LOG_COLOR_MHL_B )
+                            color(dRemovedString, LOG_COLOR_MHL_B )
                         )
 
                     pass
 
-            if foundHashPossible is False:
-                # Begin to print the results
+            else:
+                # Else if foundHashPossible was False.
                 self.COUNT['MISSING'] += 1
                 logDetail('  ' + color(hash.filename, listColor, attrs=LOG_COLOR_BOLD))
                 logDetail(
@@ -599,15 +736,26 @@ class Comparison:
         count_files_A = str( self.A.count() ) + " files"
         count_files_B = str( self.B.count() ) + " files"
 
+
+
+        if self.A.originType == 'HASHLIST_PLAIN':
+            displayed_size_A = 'Size not specified (file is a simple list of checksums)'
+        else:
+            displayed_size_A = humanSize(self.A.totalSize(), showBytes=True)
+        if self.B.originType == 'HASHLIST_PLAIN':
+            displayed_size_B = 'Size not specified (file is a simple list of checksums)'
+        else:
+            displayed_size_B = humanSize(self.B.totalSize(), showBytes=True)
+
         print('')
         if LOG_VERBOSE:
             print('Summary:')
         print('1st MHL file:', color(self.A.filepath, LOG_COLOR_MHL_A) )
         print('             ', color(count_files_A, LOG_COLOR_MHL_A) )
-        print('             ', color(self.A.totalSize(), LOG_COLOR_MHL_A) )
+        print('             ', color(displayed_size_A, LOG_COLOR_MHL_A) )
         print('2nd MHL file:', color(self.B.filepath, LOG_COLOR_MHL_B) )
         print('             ', color(count_files_B, LOG_COLOR_MHL_B) )
-        print('             ', color(self.B.totalSize(), LOG_COLOR_MHL_B) )
+        print('             ', color(displayed_size_B, LOG_COLOR_MHL_B) )
         return
 
     def printCount(self):
@@ -616,7 +764,7 @@ class Comparison:
                 'desc': 'matched perfectly'
                 },
             'MINOR': {
-                'desc': 'matched, but with differences in name, directory or modification date'
+                'desc': 'matched (but with differences in name or directory)'
                 },
             'HASH_TYPE_DIFFERENT': {
                 'desc': 'had incomparable hash types and could not be compared',
@@ -686,56 +834,103 @@ class Comparison:
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument( "PATH_A", help="path to list A", type=str)
-parser.add_argument( "PATH_B", help="path to list B", type=str)
+parser.add_argument( "FILEPATH", nargs='+', help="Path to the first file")
 parser.add_argument(
     "-v", "--verbose", "--info",
     help="gives greater detail on all files affected",
     action="store_true"
 )
+parser.add_argument(
+    "-b", "--binary",
+    help="Shows sizes in binary format, appropriate for Windows (1024 bytes = 1 KiB)",
+    action="store_true"
+)
+parser.add_argument(
+    "-d", "--dates",
+    help="Report on differences in modification date, creation date or hash date",
+    action="store_true"
+)
 args = parser.parse_args()
 
 
-if args.PATH_A and args.PATH_B:
-    pass
-else:
-    raise Exception('Two files need to be included when you run the command')
-
-foundA = os.path.isfile(args.PATH_A)
-foundB = os.path.isfile(args.PATH_B)
-
-if foundA is True and foundB is True:
-    file_path_A = args.PATH_A
-    file_path_B = args.PATH_B
-else:
-    not_found_string = ''
-    if foundA is False:
-        not_found_string += "    " + args.PATH_A + "\n"
-    if foundB is False:
-        not_found_string += "    " + args.PATH_B + "\n"
-    raise FileNotFoundError('Could not find these MHL file(s). Check the path for typos?\n' + not_found_string)
-
 if args.verbose:
     LOG_VERBOSE = True
+if args.binary:
+    LOG_SIZE_FORMAT = 'binary'
+if args.dates:
+    LOG_SHOW_DATES = True
+
+
+if len(args.FILEPATH) == 1:
+    # Print a summary of just this file
+    filepath = args.FILEPATH[0]
+    if not os.path.isfile(filepath):
+        raise FileNotFoundError('\n\nCould not find this MHL file. Check the path for typos?\n{}'.format(filepath))
+
+    MHL = MHL(filepath)
+
+    def keyfunc(x):
+        return x.directory
+
+    MHL_items = sorted(MHL.hashes.values())
+    for dir, items in itertools.groupby(MHL_items, keyfunc):
+        print(color(dir, 'green', attrs=LOG_COLOR_BOLD) + ':')
+        for item in items:
+            print_filename = '  > ' + item.filename
+            if item.sizeDefined:
+                print_size = item.sizeHuman
+            else:
+                # Don't tack on the size if it's not defined
+                print_size = ""
+            print_log_detail_to_add = '\t{} {}'.format(
+                color('({})'.format(item.identifier), 'yellow'),
+                print_size
+            )
+            if LOG_VERBOSE == True:
+                print(print_filename + print_log_detail_to_add)
+            else:
+                print(print_filename)
+
+            # Show date information, if user requests
+            if LOG_SHOW_DATES:
+                for attrib in LIST_OF_DATE_ATTRIBUTES:
+                    if hasattr(item, attrib):
+                        logDetail( '        {:<20}:'.format(attrib), getattr(item, attrib))
+        # After each directory, line break
+        print()
+    print('--------------')
+    # Summarise the MHL
+    if MHL.totalSize():
+        total_size_display = humanSize( MHL.totalSize(), showBytes=true ) + ' in total'
+    else:
+        total_size_display = 'No filesize information was present'
+    print('{} files, {}'.format(MHL.count(), total_size_display))
+
+
+elif len(args.FILEPATH) == 2:
+    # Our main comparison will take place with 2 files.
+    # Check the paths exist first.
+    for filepath in args.FILEPATH:
+        if not os.path.isfile(filepath):
+            raise FileNotFoundError('\n\nCould not find this MHL file. Check the path for typos?\n{}'.format(filepath))
+    # Then define our A and B files.
+    filepath_A = args.FILEPATH[0]
+    filepath_B = args.FILEPATH[1]
+
+    MHL_FILE_A = MHL(filepath_A)
+    MHL_FILE_B = MHL(filepath_B)
+
+    compare = Comparison(MHL_FILE_A, MHL_FILE_B)
+    compare.printInfo()
+    compare.checkCommon()
+    compare.checkDelta('A')
+    compare.checkDelta('B')
+    compare.printCount()
+
+else:
+    raise Exception('\n\nYou have specified {} files. Only two at a time are supported for comparison.\nDouble check you have not included any erroneous spaces in the file path.'.format(len(args.FILEPATH)))
 
 
 #####
 
-
-fA = open(file_path_A, 'r')
-fB = open(file_path_B, 'r')
-PARSE_FILE_A = xmltodict.parse( fA.read(), dict_constructor=dict )
-PARSE_FILE_B = xmltodict.parse( fB.read(), dict_constructor=dict )
-fA.close()
-fB.close()
-
-MHL_FILE_A = MHL(PARSE_FILE_A, file_path_A)
-MHL_FILE_B = MHL(PARSE_FILE_B, file_path_B)
-
-compare = Comparison(MHL_FILE_A, MHL_FILE_B)
-compare.printInfo()
-compare.checkCommon()
-compare.checkDelta('A')
-compare.checkDelta('B')
-compare.printCount()
 print('--------------')
