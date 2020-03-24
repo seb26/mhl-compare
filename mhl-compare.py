@@ -59,6 +59,10 @@ def showDate(dt):
 
 
 def humanSize(numBytes, showBytes=False):
+    if not numBytes:
+        # If for some reason you can't do maths on this 'None'
+        # Avoid it
+        return None
     if numBytes < 1024:
         return str(numBytes) + " bytes"
     else:
@@ -109,7 +113,12 @@ class MHL:
         self.hashes = {}
         self.duplicates = set()
 
-        PATTERN_XXHASHLIST = re.compile('^([0-9a-fA-F]{16})\s{2}(.*)$')
+        PATTERNS_HASHLIST_SIMPLE = [
+            '^([0-9a-fA-F]{16})\s{2}(.*)$',
+            '^([0-9a-fA-F]{16})\s\?XXHASH64\*(.*)$',
+            '^([0-9a-fA-F]{16})\s\*(.*)$',
+            '^([0-9a-fA-F]{32})\s\*(.*)$'
+        ]
 
         # (1) Try to parse it as XML
         try:
@@ -117,12 +126,15 @@ class MHL:
                 listObj = xmltodict.parse( f.read(), dict_constructor=dict )
                 self.originType = 'MHL'
         except:
-            # Syntax error from xmldict
-            # (2) Try parsing this as an .xxhash simple list of sums
+            # (2) Try parsing this as an .xxhash simple hashlist
+            #     This is a basic single-line per file list, with hash at the
+            #     beginning, 2 or so spaces, then filename.
+            #     Typically no other data attributes, such as found in an MHL.
             with open(filepath, 'r') as f:
                 lines = f.readlines()
-                f.close()
-
+                # We will create a "faux MHL" with XML structure.
+                # The rest of Class MHL() will then navigate this XML just like
+                # it would our regular .mhl files.
                 fauxMHL = {
                     '_ORIGIN': os.path.basename(filepath),
                     'hashlist': {
@@ -130,18 +142,33 @@ class MHL:
                     }
                 }
                 for line in lines:
-                    match = PATTERN_XXHASHLIST.match(line)
+                    # Now test each line against our identified patterns above.
+                    match = False
+                    for pattern in PATTERNS_HASHLIST_SIMPLE:
+                        match = re.compile(pattern).match(line)
+                        if match:
+                            # Found a match, work with it
+                            break
+                        else:
+                            # Keep going until we match
+                            continue
                     if match:
                         hash = match[1]
                         hashFilepath = match[2]
-
-                        # Create a faux MHL line, imitating XML already parsed as a dict
                         fauxMHL_hash = {
                             'file': hashFilepath,
                             'size': None,
                             'xxhash64be': hash,
                         }
                         fauxMHL['hashlist']['hash'].append(fauxMHL_hash)
+                    else:
+                        # This line doesn't match, keep moving on.
+                        continue
+                if len(fauxMHL['hashlist']['hash']) == 0:
+                    # If no lines matched, then no hashes were added.
+                    # Tell the user we couldn't get anything useful from file.
+                    raise Exception("\n\n    Unrecognised file: not an MHL nor a simple list of checksums." + "\n    " + filepath)
+                # Now introduce the imposter XML.
                 listObj = fauxMHL
                 self.originType = 'HASHLIST_PLAIN'
 
@@ -850,9 +877,14 @@ if len(args.FILEPATH) == 1:
         print(color(dir, 'green', attrs=LOG_COLOR_BOLD) + ':')
         for item in items:
             print_filename = '  > ' + item.filename
+            if item.sizeDefined:
+                print_size = item.sizeHuman
+            else:
+                # Don't tack on the size if it's not defined
+                print_size = ""
             print_log_detail_to_add = '\t{} {}'.format(
                 color('({})'.format(item.identifier), 'yellow'),
-                item.sizeHuman
+                print_size
             )
             if LOG_VERBOSE == True:
                 print(print_filename + print_log_detail_to_add)
@@ -868,11 +900,11 @@ if len(args.FILEPATH) == 1:
         print()
     print('--------------')
     # Summarise the MHL
-    print('{} files, {} in total'.format(
-        MHL.count(),
-        humanSize( MHL.totalSize(), showBytes=True )
-        )
-    )
+    if MHL.totalSize():
+        total_size_display = humanSize( MHL.totalSize(), showBytes=true ) + ' in total'
+    else:
+        total_size_display = 'No filesize information was present'
+    print('{} files, {}'.format(MHL.count(), total_size_display))
 
 
 elif len(args.FILEPATH) == 2:
