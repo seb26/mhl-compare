@@ -7,15 +7,33 @@ Useful when comparing two copies of media files that are intended to be the same
 
 ---
 
+### Download
+
+**Download version 0.4** (latest):
+  * https://github.com/seb26/mhl-compare/releases/download/v0.4/mhl-compare-v0.4.zip
+
 ### Installation
 
-* **Download version 0.4** (latest):
-  * https://github.com/seb26/mhl-compare/releases/download/v0.4/mhl-compare-v0.4.zip
+**Method via Finder**
+* Extract the zip (double-click it)
+* **Copy** the binary file `mhl-compare` to clipboard
+* In Finder toolbar, choose Go > Go  to Folder... or *Shift + Cmd + G*
+* Type: `/usr/local/bin`
+* Inside this folder /usr/local/bin, **paste** the file you just copied
+* Done. To use, scroll down to section on Usage.
+
+**Method via Terminal**
+
 * Extract the zip
-* Open a Terminal window
-* Copy the binary to your `/usr/local/bin`
-    `cp ~/Downloads/mhl-compare-v0.4/bin/mhl-compare /usr/local/bin/`
-* That completes the installation, now you can use `mhl-compare` from anywhere in a Terminal.
+* Then run:
+
+```
+cp ~/Downloads/mhl-compare-v0.4/mhl-compare /usr/local/bin/
+```
+
+That completes the installation, now you can run `mhl-compare` from anywhere in a Terminal.
+
+----
 
 ### Usage: compare two files
 
