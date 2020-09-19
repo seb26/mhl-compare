@@ -901,7 +901,7 @@ if len(args.FILEPATH) == 1:
     print('--------------')
     # Summarise the MHL
     if MHL.totalSize():
-        total_size_display = humanSize( MHL.totalSize(), showBytes=true ) + ' in total'
+        total_size_display = humanSize( MHL.totalSize(), showBytes=True ) + ' in total'
     else:
         total_size_display = 'No filesize information was present'
     print('{} files, {}'.format(MHL.count(), total_size_display))
